@@ -70,8 +70,7 @@ int main(int argc, char **argv)
 
     for (natural_t t = startStep; t < NSTEPS; ++t)
     {
-        stream<<<grid, block>>>(moments, dbuffer, normx, normy, normz);
-        forces<<<grid, block>>>(moments, normx, normy, normz);
+        stream<<<grid, block>>>(moments, dbuffer);
         collide<<<grid, block>>>(moments, dbuffer);
 
 #ifndef BENCHMARK

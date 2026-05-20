@@ -5,10 +5,7 @@
 
 __global__ void stream(
     const real_t *__restrict__ moments,
-    real_t *__restrict__ dbuffer,
-    const real_t *__restrict__ normx,
-    const real_t *__restrict__ normy,
-    const real_t *__restrict__ normz)
+    real_t *__restrict__ dbuffer)
 {
     const natural_t x = blockIdx.x * BLOCK_NX + threadIdx.x;
     const natural_t y = blockIdx.y * BLOCK_NY + threadIdx.y;
@@ -34,13 +31,49 @@ __global__ void stream(
     real_t myz = static_cast<real_t>(0);
     real_t phi = static_cast<real_t>(0);
 
-    const real_t normx_ = normx[idx];
-    const real_t normy_ = normy[idx];
-    const real_t normz_ = normz[idx];
+    real_t normx = static_cast<real_t>(0);
+    real_t normy = static_cast<real_t>(0);
+    real_t normz = static_cast<real_t>(0);
+
+    if (nodeType == BULK)
+    {
+        real_t gradx = static_cast<real_t>(0);
+        real_t grady = static_cast<real_t>(0);
+        real_t gradz = static_cast<real_t>(0);
+
+        constexpr_for<0, VelocitySet::Q()>(
+            [&](const auto Q) noexcept
+            {
+                constexpr int cx = VelocitySet::cx<Q>();
+                constexpr int cy = VelocitySet::cy<Q>();
+                constexpr int cz = VelocitySet::cz<Q>();
+
+                const natural_t src = global3(static_cast<natural_t>(static_cast<int>(x) + cx),
+                                              static_cast<natural_t>(static_cast<int>(y) + cy),
+                                              static_cast<natural_t>(static_cast<int>(z) + cz));
+
+                const real_t phi_q = moments[midx(src, PHI)];
+
+                gradx += VelocitySet::w<Q>() * static_cast<real_t>(cx) * phi_q;
+                grady += VelocitySet::w<Q>() * static_cast<real_t>(cy) * phi_q;
+                gradz += VelocitySet::w<Q>() * static_cast<real_t>(cz) * phi_q;
+            });
+
+        gradx *= VelocitySet::as2();
+        grady *= VelocitySet::as2();
+        gradz *= VelocitySet::as2();
+
+        const real_t gradNorm = sqrtf(gradx * gradx + grady * grady + gradz * gradz) + static_cast<real_t>(1.0e-9);
+        const real_t invGradNorm = static_cast<scalar_t>(1.0) / gradNorm;
+
+        normx = gradx * invGradNorm;
+        normy = grady * invGradNorm;
+        normz = gradz * invGradNorm;
+    }
 
     if (nodeType != BULK)
     {
-        dispatchIRBCBoundary(moments, x, y, z, nodeType, rho, ux, uy, uz, mxx, myy, mzz, mxy, mxz, myz);
+        dispatchIRBCBoundary(moments, x, y, z, nodeType, pstar, ux, uy, uz, mxx, myy, mzz, mxy, mxz, myz);
     }
     else
     {
@@ -66,7 +99,7 @@ __global__ void stream(
                                   moments[midx(src, MXZ)] * VelocitySet::hxz<Q>() +
                                   moments[midx(src, MYZ)] * VelocitySet::hyz<Q>();
 
-                const real_t fi = VelocitySet::w<Q>() * (psrc + cu + mh);
+                const real_t fi = VelocitySet::w<Q>() * (moments[midx(src, PSTAR)] + cu + mh);
 
                 pstar += fi;
                 ux += fi * static_cast<real_t>(cx);
@@ -96,7 +129,7 @@ __global__ void stream(
                                   static_cast<real_t>(cz) * moments[midx(src, UZ)];
 
                 const real_t gi = PhaseVelocitySet::w<Q>() * moments[midx(src, PHI)] * (static_cast<real_t>(1.0) + cu) +
-                                  PhaseVelocitySet::w<Q>() * sharp * (cx * normx_ + cy * normy_ + cz * normz_);
+                                  PhaseVelocitySet::w<Q>() * sharp * (cx * normx + cy * normy + cz * normz);
 
                 phi += gi;
             });
@@ -115,33 +148,9 @@ __global__ void stream(
     dbuffer[midx(idx, PHI)] = phi;
 }
 
-__global__ void forces(
-    const real_t *__restrict__ dbuffer,
-    real_t *__restrict__ normx,
-    real_t *__restrict__ normy,
-    real_t *__restrict__ normz,
-    real_t *__restrict__ fsx,
-    real_t *__restrict__ fsy,
-    real_t *__restrict__ fsz)
-{
-    const natural_t x = blockIdx.x * BLOCK_NX + threadIdx.x;
-    const natural_t y = blockIdx.y * BLOCK_NY + threadIdx.y;
-    const natural_t z = blockIdx.z * BLOCK_NZ + threadIdx.z;
-
-    if (x >= NX || y >= NY || z >= NZ)
-    {
-        return;
-    }
-
-    const natural_t idx = global3(x, y, z);
-}
-
 __global__ void collide(
     real_t *__restrict__ moments,
-    const real_t *__restrict__ dbuffer,
-    const real_t *__restrict__ fsx,
-    const real_t *__restrict__ fsy,
-    const real_t *__restrict__ fsz)
+    const real_t *__restrict__ dbuffer)
 {
     const natural_t x = blockIdx.x * BLOCK_NX + threadIdx.x;
     const natural_t y = blockIdx.y * BLOCK_NY + threadIdx.y;
@@ -177,14 +186,12 @@ __global__ void collide(
     myz *= VelocitySet::scaleIJ();
 
     // calculate pressure and viscosity induced forces
-    real_t forceX = fsx[idx];
-    real_t forceY = fsy[idx];
-    real_t forceZ = fsz[idx];
+    real_t forceX, forceY, forceZ;
 
     const real_t rho = MIXTURE LAW USING PHI;
-    const real_t invRho = static_cast<real_t>(1) / rho;
-
     const real_t tau = MIXTURE LAW USING PHI;
+
+    const real_t invRho = static_cast<real_t>(1) / rho;
     const real_t omega = static_cast<real_t>(1.0) / tau;
     const real_t tOmega = static_cast<real_t>(1) - omega;
     const real_t omegaD2 = static_cast<real_t>(0.5) * omega;
@@ -195,6 +202,7 @@ __global__ void collide(
     const real_t uyEq = uy + static_cast<real_t>(1.5) * invRho * forceY;
     const real_t uzEq = uz + static_cast<real_t>(1.5) * invRho * forceZ;
 
+    moments[midx(idx, PSTAR)] = pstar;
     moments[midx(idx, UX)] = ux + static_cast<real_t>(3) * invRho * forceX;
     moments[midx(idx, UY)] = uy + static_cast<real_t>(3) * invRho * forceY;
     moments[midx(idx, UZ)] = uz + static_cast<real_t>(3) * invRho * forceZ;
@@ -204,4 +212,5 @@ __global__ void collide(
     moments[midx(idx, MXY)] = tOmega * mxy + omega * uxEq * uyEq + ttOmegaT3 * invRho * (forceX * uyEq + forceY * uxEq);
     moments[midx(idx, MXZ)] = tOmega * mxz + omega * uxEq * uzEq + ttOmegaT3 * invRho * (forceX * uzEq + forceZ * uxEq);
     moments[midx(idx, MYZ)] = tOmega * myz + omega * uyEq * uzEq + ttOmegaT3 * invRho * (forceY * uzEq + forceZ * uyEq);
+    moments[midx(idx, PHI)] = phi;
 }
