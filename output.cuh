@@ -27,8 +27,8 @@ static inline const char *outputMomentName(const natural_t field)
 {
     switch (field)
     {
-    case RHO:
-        return "rho";
+    case PSTAR:
+        return "pstar";
     case UX:
         return "ux";
     case UY:
@@ -45,6 +45,8 @@ static inline const char *outputMomentName(const natural_t field)
         return "mxy";
     case MXZ:
         return "mxz";
+    case PHI:
+        return "phi";
     default:
         return "myz";
     }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "D3Q7.cuh"
 #include "D3Q27.cuh"
 
 __device__ [[nodiscard]] static __forceinline__ natural_t global3(
@@ -51,6 +50,21 @@ __device__ __forceinline__ constexpr void constexpr_for(F &&f) noexcept
         if constexpr (Start + 1 < End)
         {
             constexpr_for<Start + 1, End>(std::forward<F>(f));
+        }
+    }
+}
+
+namespace math
+{
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t sqrt(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::sqrtf(x);
+        }
+        else
+        {
+            return ::sqrt(x);
         }
     }
 }

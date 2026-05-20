@@ -63,7 +63,7 @@ __global__ void stream(
         grady *= VelocitySet::as2();
         gradz *= VelocitySet::as2();
 
-        const real_t gradNorm = sqrtf(gradx * gradx + grady * grady + gradz * gradz) + static_cast<real_t>(1.0e-9);
+        const real_t gradNorm = math::sqrt(gradx * gradx + grady * grady + gradz * gradz) + static_cast<real_t>(1.0e-9);
         const real_t invGradNorm = static_cast<real_t>(1.0) / gradNorm;
 
         normx = gradx * invGradNorm;
@@ -101,7 +101,7 @@ __global__ void stream(
 
                 const real_t fi = VelocitySet::w<Q>() * (moments[midx(src, PSTAR)] + cu + mh);
                 const real_t gi = VelocitySet::w<Q>() * moments[midx(src, PHI)] * (static_cast<real_t>(1.0) + cu) +
-                                  VelocitySet::w<Q>() * sharp * (cx * normx + cy * normy + cz * normz);
+                                  VelocitySet::w<Q>() * SHARP * (cx * normx + cy * normy + cz * normz);
 
                 pstar += fi;
                 ux += fi * static_cast<real_t>(cx);
@@ -175,7 +175,9 @@ __global__ void collide(
     }
 
     const real_t rho = RHO_G + (RHO_L - RHO_G) * phi;
-    const real_t tau = TAU_G + (TAU_L - TAU_G) * phi;
+    const real_t mu = MU_G + (MU_L - MU_G) * phi;
+    const real_t nu = mu / rho;
+    const real_t tau = nu * VelocitySet::as2() + static_cast<real_t>(0.5);
 
     const real_t invRho = static_cast<real_t>(1) / rho;
     const real_t omega = static_cast<real_t>(1) / tau;

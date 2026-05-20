@@ -53,6 +53,10 @@ int main(int argc, char **argv)
         CUDA_CHECK(cudaDeviceSynchronize());
     }
 
+#ifndef BENCHMARK
+    writeOutput(moments, startStep);
+#endif
+
     std::cout << std::endl;
     if (continueFromCheckpoint)
     {
