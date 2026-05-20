@@ -113,12 +113,12 @@ __global__ void stream(
                 myz += fi * VelocitySet::hyz<Q>();
             });
 
-        constexpr_for<0, PhaseVelocitySet::Q()>(
+        constexpr_for<0, VelocitySet::Q()>(
             [&](const auto Q) noexcept
             {
-                constexpr int cx = PhaseVelocitySet::cx<Q>();
-                constexpr int cy = PhaseVelocitySet::cy<Q>();
-                constexpr int cz = PhaseVelocitySet::cz<Q>();
+                constexpr int cx = VelocitySet::cx<Q>();
+                constexpr int cy = VelocitySet::cy<Q>();
+                constexpr int cz = VelocitySet::cz<Q>();
 
                 const natural_t src = global3(static_cast<natural_t>(static_cast<int>(x) - cx),
                                               static_cast<natural_t>(static_cast<int>(y) - cy),
@@ -128,8 +128,15 @@ __global__ void stream(
                                   static_cast<real_t>(cy) * moments[midx(src, UY)] +
                                   static_cast<real_t>(cz) * moments[midx(src, UZ)];
 
-                const real_t gi = PhaseVelocitySet::w<Q>() * moments[midx(src, PHI)] * (static_cast<real_t>(1.0) + cu) +
-                                  PhaseVelocitySet::w<Q>() * sharp * (cx * normx + cy * normy + cz * normz);
+                const real_t mh = moments[midx(src, MXX)] * VelocitySet::hxx<Q>() +
+                                  moments[midx(src, MYY)] * VelocitySet::hyy<Q>() +
+                                  moments[midx(src, MZZ)] * VelocitySet::hzz<Q>() +
+                                  moments[midx(src, MXY)] * VelocitySet::hxy<Q>() +
+                                  moments[midx(src, MXZ)] * VelocitySet::hxz<Q>() +
+                                  moments[midx(src, MYZ)] * VelocitySet::hyz<Q>();
+
+                const real_t gi = VelocitySet::w<Q>() * moments[midx(src, PHI)] * (static_cast<real_t>(1.0) + cu + mh) +
+                                  VelocitySet::w<Q>() * sharp * (cx * normx + cy * normy + cz * normz);
 
                 phi += gi;
             });
@@ -162,6 +169,7 @@ __global__ void collide(
     }
 
     const natural_t idx = global3(x, y, z);
+    const uint8_t nodeType = boundaryMask(x, y, z);
 
     pstar = dbuffer[midx(idx, PSTAR)];
     ux = dbuffer[midx(idx, UX)];
@@ -185,11 +193,50 @@ __global__ void collide(
     mxz *= VelocitySet::scaleIJ();
     myz *= VelocitySet::scaleIJ();
 
-    // calculate pressure and viscosity induced forces
-    real_t forceX, forceY, forceZ;
+    real_t forceX = static_cast<real_t>(0);
+    real_t forceY = static_cast<real_t>(0);
+    real_t forceZ = static_cast<real_t>(0);
 
-    const real_t rho = MIXTURE LAW USING PHI;
-    const real_t tau = MIXTURE LAW USING PHI;
+    if (nodeType == BULK)
+    {
+        real_t dphix = static_cast<real_t>(0);
+        real_t dphiy = static_cast<real_t>(0);
+        real_t dphiz = static_cast<real_t>(0);
+        real_t lapAcc = static_cast<real_t>(0);
+
+        constexpr_for<0, VelocitySet::Q()>(
+            [&](const auto Q) noexcept
+            {
+                constexpr int cx = VelocitySet::cx<Q>();
+                constexpr int cy = VelocitySet::cy<Q>();
+                constexpr int cz = VelocitySet::cz<Q>();
+
+                const natural_t src = global3(static_cast<natural_t>(static_cast<int>(x) + cx),
+                                              static_cast<natural_t>(static_cast<int>(y) + cy),
+                                              static_cast<natural_t>(static_cast<int>(z) + cz));
+
+                const real_t phi_q = dbuffer[midx(src, PHI)];
+
+                dphix += VelocitySet::w<Q>() * static_cast<real_t>(cx) * phi_q;
+                dphiy += VelocitySet::w<Q>() * static_cast<real_t>(cy) * phi_q;
+                dphiz += VelocitySet::w<Q>() * static_cast<real_t>(cz) * phi_q;
+                lapAcc += VelocitySet::w<Q>() * (phi_q - phi);
+            });
+
+        dphix *= VelocitySet::as2();
+        dphiy *= VelocitySet::as2();
+        dphiz *= VelocitySet::as2();
+
+        const real_t lapPhi = static_cast<real_t>(2) * lapAcc / CS2;
+        const real_t muPhi = static_cast<real_t>(4) * BETA_CHEM * (phi - static_cast<real_t>(1)) * phi * (phi - static_cast<real_t>(0.5)) - KAPPA_CHEM * lapPhi;
+
+        forceX = muPhi * dphix;
+        forceY = muPhi * dphiy;
+        forceZ = muPhi * dphiz;
+    }
+
+    const real_t rho = RHO_G + (RHO_L - RHO_G) * phi;
+    const real_t tau = TAU_G + (TAU_L - TAU_G) * phi;
 
     const real_t invRho = static_cast<real_t>(1) / rho;
     const real_t omega = static_cast<real_t>(1.0) / tau;
