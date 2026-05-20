@@ -33,6 +33,16 @@ int main(int argc, char **argv)
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&moments), bytes));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&dbuffer), bytes));
 
+    real_t *normx = nullptr;
+    real_t *normy = nullptr;
+    real_t *normz = nullptr;
+
+    constexpr size_t normalBytes = static_cast<size_t>(CELLS) * sizeof(real_t);
+
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&normx), normalBytes));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&normy), normalBytes));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&normz), normalBytes));
+
     real_t *momentsAlloc = moments;
     real_t *dbufferAlloc = dbuffer;
 
@@ -74,7 +84,8 @@ int main(int argc, char **argv)
 
     for (natural_t t = startStep; t < NSTEPS; ++t)
     {
-        stream<<<grid, block>>>(moments, dbuffer);
+        computeNormals<<<grid, block>>>(moments, normx, normy, normz);
+        stream<<<grid, block>>>(moments, normx, normy, normz, dbuffer);
         collide<<<grid, block>>>(moments, dbuffer);
 
 #ifndef BENCHMARK
@@ -113,5 +124,9 @@ int main(int argc, char **argv)
 
     CUDA_CHECK(cudaFree(momentsAlloc));
     CUDA_CHECK(cudaFree(dbufferAlloc));
+    CUDA_CHECK(cudaFree(normx));
+    CUDA_CHECK(cudaFree(normy));
+    CUDA_CHECK(cudaFree(normz));
+
     return 0;
 }

@@ -56,16 +56,6 @@ __device__ __host__ [[nodiscard]] static __forceinline__ int wrapPeriodicY(const
     return y;
 }
 
-__device__ __host__ [[nodiscard]] static __forceinline__ real_t jetRadius() noexcept
-{
-#ifdef JET_RADIUS
-    return static_cast<real_t>(JET_RADIUS);
-#else
-    return static_cast<real_t>(0.125) *
-           static_cast<real_t>((NX < NY) ? NX : NY);
-#endif
-}
-
 __device__ __host__ [[nodiscard]] static __forceinline__ bool isInsideBackJet(
     const natural_t x,
     const natural_t y) noexcept
@@ -79,7 +69,7 @@ __device__ __host__ [[nodiscard]] static __forceinline__ bool isInsideBackJet(
     const real_t dx = static_cast<real_t>(x) - xc;
     const real_t dy = static_cast<real_t>(y) - yc;
 
-    const real_t r = jetRadius();
+    constexpr real_t r = JET_RADIUS;
 
     return dx * dx + dy * dy <= r * r;
 }

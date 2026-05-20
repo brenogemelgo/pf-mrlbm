@@ -3,8 +3,137 @@
 #include "deviceFunctions.cuh"
 #include "irbcBoundary.cuh"
 
+__device__ [[nodiscard]] static __forceinline__ natural_t periodicXYIndex(
+    const int x,
+    const int y,
+    const int z) noexcept
+{
+    int xx = x;
+    int yy = y;
+
+    if (xx < 0)
+    {
+        xx += static_cast<int>(NX);
+    }
+    else if (xx >= static_cast<int>(NX))
+    {
+        xx -= static_cast<int>(NX);
+    }
+
+    if (yy < 0)
+    {
+        yy += static_cast<int>(NY);
+    }
+    else if (yy >= static_cast<int>(NY))
+    {
+        yy -= static_cast<int>(NY);
+    }
+
+    return global3(static_cast<natural_t>(xx),
+                   static_cast<natural_t>(yy),
+                   static_cast<natural_t>(z));
+}
+
+__device__ [[nodiscard]] static __forceinline__ natural_t normalSrcIndex(
+    const int x,
+    const int y,
+    const int z) noexcept
+{
+    int xx = x;
+    int yy = y;
+    int zz = z;
+
+    if (xx < 0)
+    {
+        xx += static_cast<int>(NX);
+    }
+    else if (xx >= static_cast<int>(NX))
+    {
+        xx -= static_cast<int>(NX);
+    }
+
+    if (yy < 0)
+    {
+        yy += static_cast<int>(NY);
+    }
+    else if (yy >= static_cast<int>(NY))
+    {
+        yy -= static_cast<int>(NY);
+    }
+
+    if (zz < 0)
+    {
+        zz = 0;
+    }
+    else if (zz >= static_cast<int>(NZ))
+    {
+        zz = static_cast<int>(NZ) - 1;
+    }
+
+    return global3(static_cast<natural_t>(xx),
+                   static_cast<natural_t>(yy),
+                   static_cast<natural_t>(zz));
+}
+
+__global__ void computeNormals(
+    const real_t *__restrict__ moments,
+    real_t *__restrict__ normx,
+    real_t *__restrict__ normy,
+    real_t *__restrict__ normz)
+{
+    const natural_t x = blockIdx.x * BLOCK_NX + threadIdx.x;
+    const natural_t y = blockIdx.y * BLOCK_NY + threadIdx.y;
+    const natural_t z = blockIdx.z * BLOCK_NZ + threadIdx.z;
+
+    if (x >= NX || y >= NY || z >= NZ)
+    {
+        return;
+    }
+
+    const natural_t idx = global3(x, y, z);
+
+    real_t gradx = static_cast<real_t>(0);
+    real_t grady = static_cast<real_t>(0);
+    real_t gradz = static_cast<real_t>(0);
+
+    constexpr_for<0, VelocitySet::Q()>(
+        [&](const auto Q) noexcept
+        {
+            constexpr int cx = VelocitySet::cx<Q>();
+            constexpr int cy = VelocitySet::cy<Q>();
+            constexpr int cz = VelocitySet::cz<Q>();
+
+            const natural_t src = normalSrcIndex(static_cast<int>(x) + cx,
+                                                 static_cast<int>(y) + cy,
+                                                 static_cast<int>(z) + cz);
+
+            const real_t phi_q = moments[midx(src, PHI)];
+
+            gradx += VelocitySet::w<Q>() * static_cast<real_t>(cx) * phi_q;
+            grady += VelocitySet::w<Q>() * static_cast<real_t>(cy) * phi_q;
+            gradz += VelocitySet::w<Q>() * static_cast<real_t>(cz) * phi_q;
+        });
+
+    gradx *= VelocitySet::as2();
+    grady *= VelocitySet::as2();
+    gradz *= VelocitySet::as2();
+
+    const real_t gradNorm =
+        math::sqrt(gradx * gradx + grady * grady + gradz * gradz) +
+        static_cast<real_t>(1.0e-9);
+
+    const real_t invGradNorm = static_cast<real_t>(1) / gradNorm;
+
+    normx[idx] = gradx * invGradNorm;
+    normy[idx] = grady * invGradNorm;
+    normz[idx] = gradz * invGradNorm;
+}
+
 __global__ void stream(
     const real_t *__restrict__ moments,
+    const real_t *__restrict__ normx,
+    const real_t *__restrict__ normy,
+    const real_t *__restrict__ normz,
     real_t *__restrict__ dbuffer)
 {
     const natural_t x = blockIdx.x * BLOCK_NX + threadIdx.x;
@@ -31,46 +160,6 @@ __global__ void stream(
     real_t myz = static_cast<real_t>(0);
     real_t phi = static_cast<real_t>(0);
 
-    real_t normx = static_cast<real_t>(0);
-    real_t normy = static_cast<real_t>(0);
-    real_t normz = static_cast<real_t>(0);
-
-    if (nodeType == BULK)
-    {
-        real_t gradx = static_cast<real_t>(0);
-        real_t grady = static_cast<real_t>(0);
-        real_t gradz = static_cast<real_t>(0);
-
-        constexpr_for<0, VelocitySet::Q()>(
-            [&](const auto Q) noexcept
-            {
-                constexpr int cx = VelocitySet::cx<Q>();
-                constexpr int cy = VelocitySet::cy<Q>();
-                constexpr int cz = VelocitySet::cz<Q>();
-
-                const natural_t src = global3(static_cast<natural_t>(static_cast<int>(x) + cx),
-                                              static_cast<natural_t>(static_cast<int>(y) + cy),
-                                              static_cast<natural_t>(static_cast<int>(z) + cz));
-
-                const real_t phi_q = moments[midx(src, PHI)];
-
-                gradx += VelocitySet::w<Q>() * static_cast<real_t>(cx) * phi_q;
-                grady += VelocitySet::w<Q>() * static_cast<real_t>(cy) * phi_q;
-                gradz += VelocitySet::w<Q>() * static_cast<real_t>(cz) * phi_q;
-            });
-
-        gradx *= VelocitySet::as2();
-        grady *= VelocitySet::as2();
-        gradz *= VelocitySet::as2();
-
-        const real_t gradNorm = math::sqrt(gradx * gradx + grady * grady + gradz * gradz) + static_cast<real_t>(1.0e-9);
-        const real_t invGradNorm = static_cast<real_t>(1.0) / gradNorm;
-
-        normx = gradx * invGradNorm;
-        normy = grady * invGradNorm;
-        normz = gradz * invGradNorm;
-    }
-
     if (nodeType != BULK)
     {
         dispatchIRBCBoundary(moments, x, y, z, nodeType, pstar, ux, uy, uz, mxx, myy, mzz, mxy, mxz, myz, phi);
@@ -84,9 +173,9 @@ __global__ void stream(
                 constexpr int cy = VelocitySet::cy<Q>();
                 constexpr int cz = VelocitySet::cz<Q>();
 
-                const natural_t src = global3(static_cast<natural_t>(static_cast<int>(x) - cx),
-                                              static_cast<natural_t>(static_cast<int>(y) - cy),
-                                              static_cast<natural_t>(static_cast<int>(z) - cz));
+                const natural_t src = periodicXYIndex(static_cast<int>(x) - cx,
+                                                      static_cast<int>(y) - cy,
+                                                      static_cast<int>(z) - cz);
 
                 const real_t cu = static_cast<real_t>(cx) * moments[midx(src, UX)] +
                                   static_cast<real_t>(cy) * moments[midx(src, UY)] +
@@ -99,9 +188,14 @@ __global__ void stream(
                                   moments[midx(src, MXZ)] * VelocitySet::hxz<Q>() +
                                   moments[midx(src, MYZ)] * VelocitySet::hyz<Q>();
 
+                const real_t phi_src = moments[midx(src, PHI)];
+
                 const real_t fi = VelocitySet::w<Q>() * (moments[midx(src, PSTAR)] + cu + mh);
-                const real_t gi = VelocitySet::w<Q>() * moments[midx(src, PHI)] * (static_cast<real_t>(1.0) + cu) +
-                                  VelocitySet::w<Q>() * SHARP * (cx * normx + cy * normy + cz * normz);
+                const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                                  VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                                      (static_cast<real_t>(cx) * normx[src] +
+                                       static_cast<real_t>(cy) * normy[src] +
+                                       static_cast<real_t>(cz) * normz[src]);
 
                 pstar += fi;
                 ux += fi * static_cast<real_t>(cx);
@@ -202,9 +296,9 @@ __global__ void collide(
             constexpr int cy = VelocitySet::cy<Q>();
             constexpr int cz = VelocitySet::cz<Q>();
 
-            const natural_t src = global3(static_cast<natural_t>(static_cast<int>(x) + cx),
-                                          static_cast<natural_t>(static_cast<int>(y) + cy),
-                                          static_cast<natural_t>(static_cast<int>(z) + cz));
+            const natural_t src = periodicXYIndex(static_cast<int>(x) + cx,
+                                                  static_cast<int>(y) + cy,
+                                                  static_cast<int>(z) + cz);
 
             const real_t phi_q = dbuffer[midx(src, PHI)];
 
@@ -227,7 +321,6 @@ __global__ void collide(
     forceZ += muPhi * dphiz;
 
     const real_t drhoDphi = RHO_L - RHO_G;
-
     const real_t drhox = drhoDphi * dphix;
     const real_t drhoy = drhoDphi * dphiy;
     const real_t drhoz = drhoDphi * dphiz;
@@ -239,7 +332,6 @@ __global__ void collide(
     const real_t pxx = mxx - ux * ux;
     const real_t pyy = myy - uy * uy;
     const real_t pzz = mzz - uz * uz;
-
     const real_t pxy = mxy - ux * uy;
     const real_t pxz = mxz - ux * uz;
     const real_t pyz = myz - uy * uz;

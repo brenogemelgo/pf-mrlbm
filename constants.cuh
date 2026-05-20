@@ -30,23 +30,23 @@ using mask_t = uint8_t;
 
 // =================================================================================================== //
 
-constexpr natural_t NX = 64;
-constexpr natural_t NY = 64;
-constexpr natural_t NZ = 128;
+constexpr natural_t NX = 128;
+constexpr natural_t NY = 128;
+constexpr natural_t NZ = 512;
 
-constexpr natural_t JET_DIAMETER = 16;
+constexpr natural_t JET_DIAMETER = 30;
 
 constexpr real_t U_CHAR = static_cast<real_t>(0.05);
 constexpr real_t REYNOLDS = static_cast<real_t>(3000.0);
 constexpr real_t WEBER = static_cast<real_t>(500.0);
 
-constexpr real_t RHO_RATIO = static_cast<real_t>(10000.0);
-constexpr real_t MU_RATIO = static_cast<real_t>(1000.0);
+constexpr real_t RHO_RATIO = static_cast<real_t>(1.0);
+constexpr real_t MU_RATIO = static_cast<real_t>(1.0);
 
-constexpr real_t WIDTH = static_cast<real_t>(4.0);
+constexpr real_t WIDTH = static_cast<real_t>(6.0);
 
-constexpr natural_t NSTEPS = 100;
-constexpr natural_t STAMP = 1;
+constexpr natural_t NSTEPS = 100000;
+constexpr natural_t STAMP = 1000;
 
 // =================================================================================================== //
 
@@ -74,7 +74,8 @@ constexpr real_t BETA_CHEM = static_cast<real_t>(12.0) * SIGMA / WIDTH;
 constexpr real_t KAPPA_CHEM = static_cast<real_t>(1.5) * SIGMA * WIDTH;
 constexpr real_t TAU_PHI = static_cast<real_t>(1.0);
 constexpr real_t DIFF_INT = static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) * (TAU_PHI - 0.5);
-constexpr real_t SHARP = static_cast<real_t>(4.0) * DIFF_INT / WIDTH;
+constexpr real_t KAPPA_INT = static_cast<real_t>(4.0) * DIFF_INT / WIDTH;
+constexpr real_t GAMMA = static_cast<real_t>(3.0) * KAPPA_INT;
 
 // =================================================================================================== //
 
