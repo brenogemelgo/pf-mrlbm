@@ -3,6 +3,7 @@
 #include "deviceFunctions.cuh"
 
 #include <cstdint>
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -71,6 +72,17 @@ static inline std::string outputStepName(const natural_t step)
     return name.str();
 }
 
+static inline std::filesystem::path &outputDirectory()
+{
+    static std::filesystem::path dir = std::filesystem::path("output") / Case::NAME / "default";
+    return dir;
+}
+
+static inline void setOutputDirectory(const std::string &simId)
+{
+    outputDirectory() = std::filesystem::path("output") / Case::NAME / simId;
+}
+
 static inline void writeBinary(
     const real_t *deviceMoments,
     const std::filesystem::path &path)
@@ -136,7 +148,7 @@ static inline bool findLatestOutputBinary(
     std::filesystem::path &binaryPath,
     natural_t &step)
 {
-    const std::filesystem::path dir("output");
+    const std::filesystem::path dir = outputDirectory();
     if (!std::filesystem::exists(dir))
     {
         return false;
@@ -212,7 +224,7 @@ static inline natural_t loadLatestCheckpoint(
     natural_t step = 0;
     if (!findLatestOutputBinary(binaryPath, step))
     {
-        std::cerr << "No checkpoint found in output/" << std::endl;
+        std::cerr << "No checkpoint found in " << outputDirectory() << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
@@ -289,11 +301,130 @@ static inline void writeVti(
     vti << "</VTKFile>\n";
 }
 
+static inline void writeCaseDiagnostics(
+    const real_t *deviceMoments,
+    const natural_t step,
+    const std::filesystem::path &dir)
+{
+    if constexpr (!Case::ENABLE_STATIC_DROPLET_DIAGNOSTICS)
+    {
+        (void)deviceMoments;
+        (void)step;
+        (void)dir;
+        return;
+    }
+    else
+    {
+        std::vector<real_t> phi(CELLS);
+        std::vector<real_t> ux(CELLS);
+        std::vector<real_t> uy(CELLS);
+        std::vector<real_t> uz(CELLS);
+        std::vector<real_t> pstar(CELLS);
+
+        outputCheckCuda(
+            cudaMemcpy(phi.data(), deviceMoments + CELLS * PHI, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
+            "cudaMemcpy diagnostics phi");
+        outputCheckCuda(
+            cudaMemcpy(ux.data(), deviceMoments + CELLS * UX, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
+            "cudaMemcpy diagnostics ux");
+        outputCheckCuda(
+            cudaMemcpy(uy.data(), deviceMoments + CELLS * UY, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
+            "cudaMemcpy diagnostics uy");
+        outputCheckCuda(
+            cudaMemcpy(uz.data(), deviceMoments + CELLS * UZ, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
+            "cudaMemcpy diagnostics uz");
+        outputCheckCuda(
+            cudaMemcpy(pstar.data(), deviceMoments + CELLS * PSTAR, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
+            "cudaMemcpy diagnostics pstar");
+
+        double mass = 0.0;
+        double weightedX = 0.0;
+        double weightedY = 0.0;
+        double weightedZ = 0.0;
+        double maxU = 0.0;
+        double pInside = 0.0;
+        double pOutside = 0.0;
+        natural_t insideCount = 0;
+        natural_t outsideCount = 0;
+        real_t minPhi = std::numeric_limits<real_t>::max();
+        real_t maxPhi = std::numeric_limits<real_t>::lowest();
+
+        for (natural_t z = 0; z < NZ; ++z)
+        {
+            for (natural_t y = 0; y < NY; ++y)
+            {
+                for (natural_t x = 0; x < NX; ++x)
+                {
+                    const natural_t idx = x + y * NX + z * STRIDE;
+                    const real_t phiValue = phi[idx];
+                    const real_t rho = RHO_G + (RHO_L - RHO_G) * phiValue;
+                    const real_t pPhys = pstar[idx] * static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) * rho;
+                    const double uMag = std::sqrt(static_cast<double>(ux[idx]) * static_cast<double>(ux[idx]) +
+                                                  static_cast<double>(uy[idx]) * static_cast<double>(uy[idx]) +
+                                                  static_cast<double>(uz[idx]) * static_cast<double>(uz[idx]));
+
+                    mass += static_cast<double>(phiValue);
+                    weightedX += static_cast<double>(phiValue) * static_cast<double>(x);
+                    weightedY += static_cast<double>(phiValue) * static_cast<double>(y);
+                    weightedZ += static_cast<double>(phiValue) * static_cast<double>(z);
+                    maxU = std::max(maxU, uMag);
+                    minPhi = std::min(minPhi, phiValue);
+                    maxPhi = std::max(maxPhi, phiValue);
+
+                    if (phiValue > static_cast<real_t>(0.9))
+                    {
+                        pInside += static_cast<double>(pPhys);
+                        ++insideCount;
+                    }
+                    else if (phiValue < static_cast<real_t>(0.1))
+                    {
+                        pOutside += static_cast<double>(pPhys);
+                        ++outsideCount;
+                    }
+                }
+            }
+        }
+
+        const double invMass = mass > 0.0 ? 1.0 / mass : 0.0;
+        const double avgInside = insideCount > 0 ? pInside / static_cast<double>(insideCount) : 0.0;
+        const double avgOutside = outsideCount > 0 ? pOutside / static_cast<double>(outsideCount) : 0.0;
+        const double deltaP = avgInside - avgOutside;
+
+        const std::filesystem::path diagnosticsPath = dir / "diagnostics.csv";
+        const bool writeHeader = !std::filesystem::exists(diagnosticsPath);
+        std::ofstream out(diagnosticsPath, std::ios::app);
+        if (!out)
+        {
+            std::cerr << "Could not open diagnostics output: " << diagnosticsPath << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+
+        if (writeHeader)
+        {
+            out << "step,mass,phi_min,phi_max,max_u,com_x,com_y,com_z,p_inside_avg,p_outside_avg,delta_p,expected_delta_p\n";
+        }
+
+        out << step << ','
+            << std::setprecision(10)
+            << mass << ','
+            << minPhi << ','
+            << maxPhi << ','
+            << maxU << ','
+            << weightedX * invMass << ','
+            << weightedY * invMass << ','
+            << weightedZ * invMass << ','
+            << avgInside << ','
+            << avgOutside << ','
+            << deltaP << ','
+            << Case::EXPECTED_DELTA_P << '\n';
+    }
+}
+
 static inline void writeOutput(
     const real_t *deviceMoments,
     const natural_t step)
 {
-    const std::filesystem::path dir("output");
+    const std::filesystem::path dir = outputDirectory();
     std::filesystem::create_directories(dir);
 
     const std::string base = outputStepName(step);
@@ -302,4 +433,5 @@ static inline void writeOutput(
 
     writeBinary(deviceMoments, binaryPath);
     writeVti(binaryPath, vtiPath);
+    writeCaseDiagnostics(deviceMoments, step, dir);
 }

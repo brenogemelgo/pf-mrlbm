@@ -3,78 +3,6 @@
 #include "deviceFunctions.cuh"
 #include "irbcBoundary.cuh"
 
-__device__ [[nodiscard]] static __forceinline__ natural_t periodicXYIndex(
-    const int x,
-    const int y,
-    const int z) noexcept
-{
-    int xx = x;
-    int yy = y;
-
-    if (xx < 0)
-    {
-        xx += static_cast<int>(NX);
-    }
-    else if (xx >= static_cast<int>(NX))
-    {
-        xx -= static_cast<int>(NX);
-    }
-
-    if (yy < 0)
-    {
-        yy += static_cast<int>(NY);
-    }
-    else if (yy >= static_cast<int>(NY))
-    {
-        yy -= static_cast<int>(NY);
-    }
-
-    return global3(static_cast<natural_t>(xx),
-                   static_cast<natural_t>(yy),
-                   static_cast<natural_t>(z));
-}
-
-__device__ [[nodiscard]] static __forceinline__ natural_t normalSrcIndex(
-    const int x,
-    const int y,
-    const int z) noexcept
-{
-    int xx = x;
-    int yy = y;
-    int zz = z;
-
-    if (xx < 0)
-    {
-        xx += static_cast<int>(NX);
-    }
-    else if (xx >= static_cast<int>(NX))
-    {
-        xx -= static_cast<int>(NX);
-    }
-
-    if (yy < 0)
-    {
-        yy += static_cast<int>(NY);
-    }
-    else if (yy >= static_cast<int>(NY))
-    {
-        yy -= static_cast<int>(NY);
-    }
-
-    if (zz < 0)
-    {
-        zz = 0;
-    }
-    else if (zz >= static_cast<int>(NZ))
-    {
-        zz = static_cast<int>(NZ) - 1;
-    }
-
-    return global3(static_cast<natural_t>(xx),
-                   static_cast<natural_t>(yy),
-                   static_cast<natural_t>(zz));
-}
-
 __global__ void computeNormals(
     const real_t *__restrict__ moments,
     real_t *__restrict__ normx,
@@ -103,9 +31,9 @@ __global__ void computeNormals(
             constexpr int cy = VelocitySet::cy<Q>();
             constexpr int cz = VelocitySet::cz<Q>();
 
-            const natural_t src = normalSrcIndex(static_cast<int>(x) + cx,
-                                                 static_cast<int>(y) + cy,
-                                                 static_cast<int>(z) + cz);
+            const natural_t src = caseNeighborIndex(static_cast<int>(x) + cx,
+                                                    static_cast<int>(y) + cy,
+                                                    static_cast<int>(z) + cz);
 
             const real_t phi_q = moments[midx(src, PHI)];
 
@@ -173,9 +101,9 @@ __global__ void stream(
                 constexpr int cy = VelocitySet::cy<Q>();
                 constexpr int cz = VelocitySet::cz<Q>();
 
-                const natural_t src = periodicXYIndex(static_cast<int>(x) - cx,
-                                                      static_cast<int>(y) - cy,
-                                                      static_cast<int>(z) - cz);
+                const natural_t src = caseNeighborIndex(static_cast<int>(x) - cx,
+                                                        static_cast<int>(y) - cy,
+                                                        static_cast<int>(z) - cz);
 
                 const real_t cu = static_cast<real_t>(cx) * moments[midx(src, UX)] +
                                   static_cast<real_t>(cy) * moments[midx(src, UY)] +
@@ -296,9 +224,9 @@ __global__ void collide(
             constexpr int cy = VelocitySet::cy<Q>();
             constexpr int cz = VelocitySet::cz<Q>();
 
-            const natural_t src = periodicXYIndex(static_cast<int>(x) + cx,
-                                                  static_cast<int>(y) + cy,
-                                                  static_cast<int>(z) + cz);
+            const natural_t src = caseNeighborIndex(static_cast<int>(x) + cx,
+                                                    static_cast<int>(y) + cy,
+                                                    static_cast<int>(z) + cz);
 
             const real_t phi_q = dbuffer[midx(src, PHI)];
 
@@ -339,6 +267,8 @@ __global__ void collide(
     forceX += -ttOmega * (pxx * drhox + pxy * drhoy + pxz * drhoz);
     forceY += -ttOmega * (pxy * drhox + pyy * drhoy + pyz * drhoz);
     forceZ += -ttOmega * (pxz * drhox + pyz * drhoy + pzz * drhoz);
+
+    Case::bodyForce(x, y, z, phi, rho, forceX, forceY, forceZ);
 
     ux *= VelocitySet::scaleI();
     uy *= VelocitySet::scaleI();

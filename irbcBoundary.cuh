@@ -12,81 +12,24 @@ constexpr natural_t IRBC_TABLE_SIZE = 64 * IRBC_TABLE_STRIDE;
 __device__ __constant__ real_t IRBC_INVERSE[IRBC_TABLE_SIZE];
 
 // ===================================================================================================================== //
-// Multiphase jet boundary convention:
-//
-// BACK, z = 0:
-//     circular inlet centered on the x-y plane.
-//     inside jet:  ux = 0, uy = 0, uz = U_CHAR, phi = 1.
-//     outside jet: ux = 0, uy = 0, uz = 0,      phi = 0.
-//
-// FRONT, z = NZ - 1:
-//     Neumann outflow: copy all moments from z - 1.
-//
-// WEST/EAST/SOUTH/NORTH:
-//     periodic. They should not be treated as physical IRBC boundaries here.
-// ===================================================================================================================== //
-
-__device__ __host__ [[nodiscard]] static __forceinline__ int wrapPeriodicX(const int x) noexcept
-{
-    if (x < 0)
-    {
-        return static_cast<int>(NX) - 1;
-    }
-
-    if (x >= static_cast<int>(NX))
-    {
-        return 0;
-    }
-
-    return x;
-}
-
-__device__ __host__ [[nodiscard]] static __forceinline__ int wrapPeriodicY(const int y) noexcept
-{
-    if (y < 0)
-    {
-        return static_cast<int>(NY) - 1;
-    }
-
-    if (y >= static_cast<int>(NY))
-    {
-        return 0;
-    }
-
-    return y;
-}
-
-__device__ __host__ [[nodiscard]] static __forceinline__ bool isInsideBackJet(
-    const natural_t x,
-    const natural_t y) noexcept
-{
-    const real_t xc = static_cast<real_t>(0.5) *
-                      (static_cast<real_t>(NX) - static_cast<real_t>(1));
-
-    const real_t yc = static_cast<real_t>(0.5) *
-                      (static_cast<real_t>(NY) - static_cast<real_t>(1));
-
-    const real_t dx = static_cast<real_t>(x) - xc;
-    const real_t dy = static_cast<real_t>(y) - yc;
-
-    constexpr real_t r = JET_RADIUS;
-
-    return dx * dx + dy * dy <= r * r;
-}
-
-// ===================================================================================================================== //
 
 template <natural_t dir>
 __device__ [[nodiscard]] static __forceinline__ bool isMissingDirection(
     const unsigned int nodeType) noexcept
 {
-    return ((nodeType & BACK) == BACK) && (VelocitySet::cz<dir>() > 0);
+    return Case::isMissingDirection(nodeType,
+                                    VelocitySet::cx<dir>(),
+                                    VelocitySet::cy<dir>(),
+                                    VelocitySet::cz<dir>());
 }
 
 template <unsigned int nodeTypeValue, natural_t dir>
 __device__ __host__ [[nodiscard]] static inline constexpr bool isMissingDirectionConst() noexcept
 {
-    return ((nodeTypeValue & BACK) == BACK) && (VelocitySet::cz<dir>() > 0);
+    return Case::isMissingDirection(nodeTypeValue,
+                                    VelocitySet::cx<dir>(),
+                                    VelocitySet::cy<dir>(),
+                                    VelocitySet::cz<dir>());
 }
 
 // ===================================================================================================================== //
@@ -102,13 +45,9 @@ __device__ [[nodiscard]] static __forceinline__ real_t reconstructPressureVeloci
     constexpr int cy = VelocitySet::cy<Q>();
     constexpr int cz = VelocitySet::cz<Q>();
 
-    const int sx = wrapPeriodicX(static_cast<int>(x) - cx);
-    const int sy = wrapPeriodicY(static_cast<int>(y) - cy);
-    const int sz = static_cast<int>(z) - cz;
-
-    const natural_t src = global3(static_cast<natural_t>(sx),
-                                  static_cast<natural_t>(sy),
-                                  static_cast<natural_t>(sz));
+    const natural_t src = caseNeighborIndex(static_cast<int>(x) - cx,
+                                            static_cast<int>(y) - cy,
+                                            static_cast<int>(z) - cz);
 
     const real_t cu =
         static_cast<real_t>(cx) * moments[midx(src, UX)] +
@@ -163,7 +102,7 @@ __device__ static __forceinline__ void copyCurrentBoundaryMoments(
     phi = moments[midx(idx, PHI)];
 }
 
-__device__ static __forceinline__ void copyFrontOutflowMoments(
+__device__ static __forceinline__ void copyCaseOutflowMoments(
     const real_t *__restrict__ moments,
     const natural_t x,
     const natural_t y,
@@ -180,11 +119,12 @@ __device__ static __forceinline__ void copyFrontOutflowMoments(
     real_t &myz,
     real_t &phi) noexcept
 {
-    const natural_t srcZ = z > static_cast<natural_t>(0)
-                               ? z - static_cast<natural_t>(1)
-                               : z;
+    natural_t srcX;
+    natural_t srcY;
+    natural_t srcZ;
+    Case::copyOutflowSource(x, y, z, srcX, srcY, srcZ);
 
-    const natural_t src = global3(x, y, srcZ);
+    const natural_t src = global3(srcX, srcY, srcZ);
 
     pstar = moments[midx(src, PSTAR)];
     ux = moments[midx(src, UX)];
@@ -204,27 +144,28 @@ __device__ static __forceinline__ void copyFrontOutflowMoments(
 
 // ===================================================================================================================== //
 
-__device__ static __forceinline__ void backBoundaryState(
+__device__ static __forceinline__ void caseBoundaryState(
+    const real_t *__restrict__ moments,
     const natural_t x,
     const natural_t y,
+    const natural_t z,
+    const unsigned int nodeType,
     real_t &ubx,
     real_t &uby,
     real_t &ubz,
     real_t &phiB) noexcept
 {
-    ubx = static_cast<real_t>(0);
-    uby = static_cast<real_t>(0);
+    natural_t srcX;
+    natural_t srcY;
+    natural_t srcZ;
+    real_t copiedPhi = static_cast<real_t>(0);
+    if (Case::boundaryPhiSource(x, y, z, nodeType, srcX, srcY, srcZ))
+    {
+        const natural_t src = global3(srcX, srcY, srcZ);
+        copiedPhi = moments[midx(src, PHI)];
+    }
 
-    if (isInsideBackJet(x, y))
-    {
-        ubz = U_CHAR;
-        phiB = static_cast<real_t>(1);
-    }
-    else
-    {
-        ubz = static_cast<real_t>(0);
-        phiB = static_cast<real_t>(0);
-    }
+    Case::boundaryVelocityPhi(x, y, z, nodeType, copiedPhi, ubx, uby, ubz, phiB);
 }
 
 // ===================================================================================================================== //
@@ -250,7 +191,7 @@ __device__ static __forceinline__ void solveIRBCSystem(
 }
 
 template <unsigned int nodeTypeValue>
-__device__ static __forceinline__ void applyBackIRBCBoundaryTyped(
+__device__ static __forceinline__ void applyIRBCBoundaryTyped(
     const real_t *__restrict__ moments,
     const natural_t x,
     const natural_t y,
@@ -275,7 +216,7 @@ __device__ static __forceinline__ void applyBackIRBCBoundaryTyped(
     real_t ubz;
     real_t phiB;
 
-    backBoundaryState(x, y, ubx, uby, ubz, phiB);
+    caseBoundaryState(moments, x, y, z, nodeTypeValue, ubx, uby, ubz, phiB);
 
     const real_t ub2 = ubx * ubx + uby * uby + ubz * ubz;
 
@@ -353,7 +294,7 @@ __device__ static __forceinline__ void applyBackIRBCBoundaryTyped(
     phi = phiB;
 }
 
-__device__ static __forceinline__ void applyBackIRBCBoundary(
+__device__ static __forceinline__ void applyIRBCBoundary(
     const real_t *__restrict__ moments,
     const natural_t x,
     const natural_t y,
@@ -379,7 +320,7 @@ __device__ static __forceinline__ void applyBackIRBCBoundary(
     real_t ubz;
     real_t phiB;
 
-    backBoundaryState(x, y, ubx, uby, ubz, phiB);
+    caseBoundaryState(moments, x, y, z, nodeType, ubx, uby, ubz, phiB);
 
     const real_t ub2 = ubx * ubx + uby * uby + ubz * ubz;
 
@@ -477,27 +418,27 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
     real_t &myz,
     real_t &phi) noexcept
 {
-    if ((nodeType & FRONT) == FRONT)
+    if (Case::isCopyOutflowBoundary(nodeType))
     {
-        copyFrontOutflowMoments(moments,
-                                x,
-                                y,
-                                z,
-                                pstar,
-                                ux,
-                                uy,
-                                uz,
-                                mxx,
-                                myy,
-                                mzz,
-                                mxy,
-                                mxz,
-                                myz,
-                                phi);
+        copyCaseOutflowMoments(moments,
+                               x,
+                               y,
+                               z,
+                               pstar,
+                               ux,
+                               uy,
+                               uz,
+                               mxx,
+                               myy,
+                               mzz,
+                               mxy,
+                               mxz,
+                               myz,
+                               phi);
         return;
     }
 
-    if ((nodeType & BACK) != BACK)
+    if (!Case::hasIRBCBoundary(nodeType))
     {
         copyCurrentBoundaryMoments(moments,
                                    x,
@@ -520,184 +461,220 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
     switch (nodeType)
     {
     case BACK_FACE:
-        applyBackIRBCBoundaryTyped<BACK_FACE>(moments,
-                                              x,
-                                              y,
-                                              z,
-                                              pstar,
-                                              ux,
-                                              uy,
-                                              uz,
-                                              mxx,
-                                              myy,
-                                              mzz,
-                                              mxy,
-                                              mxz,
-                                              myz,
-                                              phi);
+        applyIRBCBoundaryTyped<BACK_FACE>(moments,
+                                          x,
+                                          y,
+                                          z,
+                                          pstar,
+                                          ux,
+                                          uy,
+                                          uz,
+                                          mxx,
+                                          myy,
+                                          mzz,
+                                          mxy,
+                                          mxz,
+                                          myz,
+                                          phi);
+        return;
+
+    case SOUTH_FACE:
+        applyIRBCBoundaryTyped<SOUTH_FACE>(moments,
+                                           x,
+                                           y,
+                                           z,
+                                           pstar,
+                                           ux,
+                                           uy,
+                                           uz,
+                                           mxx,
+                                           myy,
+                                           mzz,
+                                           mxy,
+                                           mxz,
+                                           myz,
+                                           phi);
+        return;
+
+    case NORTH_FACE:
+        applyIRBCBoundaryTyped<NORTH_FACE>(moments,
+                                           x,
+                                           y,
+                                           z,
+                                           pstar,
+                                           ux,
+                                           uy,
+                                           uz,
+                                           mxx,
+                                           myy,
+                                           mzz,
+                                           mxy,
+                                           mxz,
+                                           myz,
+                                           phi);
         return;
 
     case NORTH_BACK:
-        applyBackIRBCBoundaryTyped<NORTH_BACK>(moments,
-                                               x,
-                                               y,
-                                               z,
-                                               pstar,
-                                               ux,
-                                               uy,
-                                               uz,
-                                               mxx,
-                                               myy,
-                                               mzz,
-                                               mxy,
-                                               mxz,
-                                               myz,
-                                               phi);
+        applyIRBCBoundaryTyped<NORTH_BACK>(moments,
+                                           x,
+                                           y,
+                                           z,
+                                           pstar,
+                                           ux,
+                                           uy,
+                                           uz,
+                                           mxx,
+                                           myy,
+                                           mzz,
+                                           mxy,
+                                           mxz,
+                                           myz,
+                                           phi);
         return;
 
     case SOUTH_BACK:
-        applyBackIRBCBoundaryTyped<SOUTH_BACK>(moments,
-                                               x,
-                                               y,
-                                               z,
-                                               pstar,
-                                               ux,
-                                               uy,
-                                               uz,
-                                               mxx,
-                                               myy,
-                                               mzz,
-                                               mxy,
-                                               mxz,
-                                               myz,
-                                               phi);
+        applyIRBCBoundaryTyped<SOUTH_BACK>(moments,
+                                           x,
+                                           y,
+                                           z,
+                                           pstar,
+                                           ux,
+                                           uy,
+                                           uz,
+                                           mxx,
+                                           myy,
+                                           mzz,
+                                           mxy,
+                                           mxz,
+                                           myz,
+                                           phi);
         return;
 
     case WEST_BACK:
-        applyBackIRBCBoundaryTyped<WEST_BACK>(moments,
-                                              x,
-                                              y,
-                                              z,
-                                              pstar,
-                                              ux,
-                                              uy,
-                                              uz,
-                                              mxx,
-                                              myy,
-                                              mzz,
-                                              mxy,
-                                              mxz,
-                                              myz,
-                                              phi);
+        applyIRBCBoundaryTyped<WEST_BACK>(moments,
+                                          x,
+                                          y,
+                                          z,
+                                          pstar,
+                                          ux,
+                                          uy,
+                                          uz,
+                                          mxx,
+                                          myy,
+                                          mzz,
+                                          mxy,
+                                          mxz,
+                                          myz,
+                                          phi);
         return;
 
     case EAST_BACK:
-        applyBackIRBCBoundaryTyped<EAST_BACK>(moments,
-                                              x,
-                                              y,
-                                              z,
-                                              pstar,
-                                              ux,
-                                              uy,
-                                              uz,
-                                              mxx,
-                                              myy,
-                                              mzz,
-                                              mxy,
-                                              mxz,
-                                              myz,
-                                              phi);
+        applyIRBCBoundaryTyped<EAST_BACK>(moments,
+                                          x,
+                                          y,
+                                          z,
+                                          pstar,
+                                          ux,
+                                          uy,
+                                          uz,
+                                          mxx,
+                                          myy,
+                                          mzz,
+                                          mxy,
+                                          mxz,
+                                          myz,
+                                          phi);
         return;
 
     case NORTH_WEST_BACK:
-        applyBackIRBCBoundaryTyped<NORTH_WEST_BACK>(moments,
-                                                    x,
-                                                    y,
-                                                    z,
-                                                    pstar,
-                                                    ux,
-                                                    uy,
-                                                    uz,
-                                                    mxx,
-                                                    myy,
-                                                    mzz,
-                                                    mxy,
-                                                    mxz,
-                                                    myz,
-                                                    phi);
+        applyIRBCBoundaryTyped<NORTH_WEST_BACK>(moments,
+                                                x,
+                                                y,
+                                                z,
+                                                pstar,
+                                                ux,
+                                                uy,
+                                                uz,
+                                                mxx,
+                                                myy,
+                                                mzz,
+                                                mxy,
+                                                mxz,
+                                                myz,
+                                                phi);
         return;
 
     case NORTH_EAST_BACK:
-        applyBackIRBCBoundaryTyped<NORTH_EAST_BACK>(moments,
-                                                    x,
-                                                    y,
-                                                    z,
-                                                    pstar,
-                                                    ux,
-                                                    uy,
-                                                    uz,
-                                                    mxx,
-                                                    myy,
-                                                    mzz,
-                                                    mxy,
-                                                    mxz,
-                                                    myz,
-                                                    phi);
+        applyIRBCBoundaryTyped<NORTH_EAST_BACK>(moments,
+                                                x,
+                                                y,
+                                                z,
+                                                pstar,
+                                                ux,
+                                                uy,
+                                                uz,
+                                                mxx,
+                                                myy,
+                                                mzz,
+                                                mxy,
+                                                mxz,
+                                                myz,
+                                                phi);
         return;
 
     case SOUTH_WEST_BACK:
-        applyBackIRBCBoundaryTyped<SOUTH_WEST_BACK>(moments,
-                                                    x,
-                                                    y,
-                                                    z,
-                                                    pstar,
-                                                    ux,
-                                                    uy,
-                                                    uz,
-                                                    mxx,
-                                                    myy,
-                                                    mzz,
-                                                    mxy,
-                                                    mxz,
-                                                    myz,
-                                                    phi);
+        applyIRBCBoundaryTyped<SOUTH_WEST_BACK>(moments,
+                                                x,
+                                                y,
+                                                z,
+                                                pstar,
+                                                ux,
+                                                uy,
+                                                uz,
+                                                mxx,
+                                                myy,
+                                                mzz,
+                                                mxy,
+                                                mxz,
+                                                myz,
+                                                phi);
         return;
 
     case SOUTH_EAST_BACK:
-        applyBackIRBCBoundaryTyped<SOUTH_EAST_BACK>(moments,
-                                                    x,
-                                                    y,
-                                                    z,
-                                                    pstar,
-                                                    ux,
-                                                    uy,
-                                                    uz,
-                                                    mxx,
-                                                    myy,
-                                                    mzz,
-                                                    mxy,
-                                                    mxz,
-                                                    myz,
-                                                    phi);
+        applyIRBCBoundaryTyped<SOUTH_EAST_BACK>(moments,
+                                                x,
+                                                y,
+                                                z,
+                                                pstar,
+                                                ux,
+                                                uy,
+                                                uz,
+                                                mxx,
+                                                myy,
+                                                mzz,
+                                                mxy,
+                                                mxz,
+                                                myz,
+                                                phi);
         return;
 
     default:
-        applyBackIRBCBoundary(moments,
-                              x,
-                              y,
-                              z,
-                              nodeType,
-                              pstar,
-                              ux,
-                              uy,
-                              uz,
-                              mxx,
-                              myy,
-                              mzz,
-                              mxy,
-                              mxz,
-                              myz,
-                              phi);
+        applyIRBCBoundary(moments,
+                          x,
+                          y,
+                          z,
+                          nodeType,
+                          pstar,
+                          ux,
+                          uy,
+                          uz,
+                          mxx,
+                          myy,
+                          mzz,
+                          mxy,
+                          mxz,
+                          myz,
+                          phi);
         return;
     }
 }
@@ -711,11 +688,11 @@ __host__ [[nodiscard]] static inline constexpr bool isValidBoundaryTypeConst() n
     {
         return false;
     }
-    else if constexpr ((nodeTypeValue & BACK) != BACK)
+    else if constexpr (!Case::hasIRBCBoundary<nodeTypeValue>())
     {
         return false;
     }
-    else if constexpr ((nodeTypeValue & FRONT) == FRONT)
+    else if constexpr (Case::isCopyOutflowBoundary<nodeTypeValue>())
     {
         return false;
     }

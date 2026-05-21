@@ -17,10 +17,14 @@ __device__ __host__ [[nodiscard]] static __forceinline__ natural_t midx(
     return idx + CELLS * moment;
 }
 
-template <int c, natural_t N>
-__device__ [[nodiscard]] static inline natural_t periodicPull(const natural_t a) noexcept
+__device__ [[nodiscard]] static __forceinline__ natural_t caseNeighborIndex(
+    const int x,
+    const int y,
+    const int z) noexcept
 {
-    return (a - static_cast<natural_t>(c)) & (N - 1);
+    return global3(static_cast<natural_t>(Case::neighborX(x)),
+                   static_cast<natural_t>(Case::neighborY(y)),
+                   static_cast<natural_t>(Case::neighborZ(z)));
 }
 
 template <typename T, T v>

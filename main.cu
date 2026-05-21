@@ -18,13 +18,19 @@
 int main(int argc, char **argv)
 {
     bool continueFromCheckpoint = false;
+    std::string simId = "default";
     for (int arg = 1; arg < argc; ++arg)
     {
         if (std::strcmp(argv[arg], "--continue") == 0 || std::strcmp(argv[arg], "continue") == 0)
         {
             continueFromCheckpoint = true;
         }
+        else
+        {
+            simId = argv[arg];
+        }
     }
+    setOutputDirectory(simId);
 
     real_t *moments = nullptr;
     real_t *dbuffer = nullptr;
@@ -58,7 +64,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        cavityInit<<<grid, block>>>(moments, dbuffer);
+        caseInit<<<grid, block>>>(moments, dbuffer);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
     }
@@ -76,6 +82,8 @@ int main(int argc, char **argv)
     {
         std::cout << "simulation start" << std::endl;
     }
+    std::cout << "case: " << Case::NAME << std::endl;
+    std::cout << "output: " << outputDirectory() << std::endl;
     const auto start = std::chrono::high_resolution_clock::now();
 #ifndef BENCHMARK
     auto lastStamp = start;

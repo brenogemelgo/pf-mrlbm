@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cmath>
+#include <limits>
 #include <type_traits>
 #include <vector>
 #include <stdexcept>
@@ -30,62 +31,45 @@ using mask_t = uint8_t;
 
 // =================================================================================================== //
 
-constexpr natural_t NX = 128;
-constexpr natural_t NY = 128;
-constexpr natural_t NZ = 512;
+constexpr mask_t BULK = 0u;
+constexpr mask_t WEST = 1u << 0;
+constexpr mask_t EAST = 1u << 1;
+constexpr mask_t SOUTH = 1u << 2;
+constexpr mask_t NORTH = 1u << 3;
+constexpr mask_t BACK = 1u << 4;
+constexpr mask_t FRONT = 1u << 5;
 
-constexpr natural_t JET_DIAMETER = 30;
+// face nodes
+constexpr mask_t NORTH_FACE = NORTH;
+constexpr mask_t SOUTH_FACE = SOUTH;
+constexpr mask_t WEST_FACE = WEST;
+constexpr mask_t EAST_FACE = EAST;
+constexpr mask_t FRONT_FACE = FRONT;
+constexpr mask_t BACK_FACE = BACK;
 
-constexpr real_t U_CHAR = static_cast<real_t>(0.05);
-constexpr real_t REYNOLDS = static_cast<real_t>(1000.0);
-constexpr real_t WEBER = static_cast<real_t>(2500.0);
+// edge nodes
+constexpr mask_t NORTH_WEST = NORTH | WEST;
+constexpr mask_t NORTH_EAST = NORTH | EAST;
+constexpr mask_t NORTH_FRONT = NORTH | FRONT;
+constexpr mask_t NORTH_BACK = NORTH | BACK;
+constexpr mask_t SOUTH_WEST = SOUTH | WEST;
+constexpr mask_t SOUTH_EAST = SOUTH | EAST;
+constexpr mask_t SOUTH_FRONT = SOUTH | FRONT;
+constexpr mask_t SOUTH_BACK = SOUTH | BACK;
+constexpr mask_t WEST_FRONT = WEST | FRONT;
+constexpr mask_t WEST_BACK = WEST | BACK;
+constexpr mask_t EAST_FRONT = EAST | FRONT;
+constexpr mask_t EAST_BACK = EAST | BACK;
 
-constexpr real_t RHO_RATIO = static_cast<real_t>(1000.0);
-constexpr real_t MU_RATIO = static_cast<real_t>(1.0);
-
-constexpr real_t WIDTH = static_cast<real_t>(12.0);
-
-constexpr natural_t NSTEPS = 100000;
-constexpr natural_t STAMP = 1000;
-
-// =================================================================================================== //
-
-constexpr natural_t JET_RADIUS = JET_DIAMETER / 2;
-constexpr natural_t L_CHAR = JET_DIAMETER;
-constexpr natural_t CELLS = NX * NY * NZ;
-constexpr natural_t STRIDE = NX * NY;
-
-// =================================================================================================== //
-
-constexpr real_t RHO_L = static_cast<real_t>(1.0);
-constexpr real_t RHO_G = RHO_L / RHO_RATIO;
-constexpr real_t NU_L = static_cast<real_t>((static_cast<double>(U_CHAR) * static_cast<double>(L_CHAR)) / static_cast<double>(REYNOLDS));
-constexpr real_t MU_L = RHO_L * NU_L;
-constexpr real_t MU_G = MU_L / MU_RATIO;
-constexpr real_t NU_G = MU_G / RHO_G;
-constexpr real_t TAU_L = static_cast<real_t>(3.0) * NU_L + static_cast<real_t>(0.5);
-constexpr real_t TAU_G = static_cast<real_t>(3.0) * NU_G + static_cast<real_t>(0.5);
-constexpr real_t VISCOSITY = NU_L;
-
-// =================================================================================================== //
-
-constexpr real_t SIGMA = static_cast<real_t>((static_cast<double>(RHO_L) * static_cast<double>(U_CHAR) * static_cast<double>(U_CHAR) * static_cast<double>(L_CHAR)) / static_cast<double>(WEBER));
-constexpr real_t BETA_CHEM = static_cast<real_t>(12.0) * SIGMA / WIDTH;
-constexpr real_t KAPPA_CHEM = static_cast<real_t>(1.5) * SIGMA * WIDTH;
-constexpr real_t TAU_PHI = static_cast<real_t>(1.0);
-constexpr real_t DIFF_INT = static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) * (TAU_PHI - 0.5);
-constexpr real_t KAPPA_INT = static_cast<real_t>(4.0) * DIFF_INT / WIDTH;
-constexpr real_t GAMMA = static_cast<real_t>(3.0) * KAPPA_INT;
-
-// =================================================================================================== //
-
-constexpr natural_t BLOCK_NX = 32;
-constexpr natural_t BLOCK_NY = 4;
-constexpr natural_t BLOCK_NZ = 4;
-
-constexpr natural_t GRID_X = (NX + BLOCK_NX - 1) / BLOCK_NX;
-constexpr natural_t GRID_Y = (NY + BLOCK_NY - 1) / BLOCK_NY;
-constexpr natural_t GRID_Z = (NZ + BLOCK_NZ - 1) / BLOCK_NZ;
+// corner nodes
+constexpr mask_t NORTH_WEST_FRONT = NORTH | WEST | FRONT;
+constexpr mask_t NORTH_WEST_BACK = NORTH | WEST | BACK;
+constexpr mask_t NORTH_EAST_FRONT = NORTH | EAST | FRONT;
+constexpr mask_t NORTH_EAST_BACK = NORTH | EAST | BACK;
+constexpr mask_t SOUTH_WEST_FRONT = SOUTH | WEST | FRONT;
+constexpr mask_t SOUTH_WEST_BACK = SOUTH | WEST | BACK;
+constexpr mask_t SOUTH_EAST_FRONT = SOUTH | EAST | FRONT;
+constexpr mask_t SOUTH_EAST_BACK = SOUTH | EAST | BACK;
 
 // =================================================================================================== //
 
@@ -103,5 +87,43 @@ constexpr natural_t MXY = 7;
 constexpr natural_t MXZ = 8;
 constexpr natural_t MYZ = 9;
 constexpr natural_t PHI = 10;
+
+// =================================================================================================== //
+
+#include "cases/caseSelector.cuh"
+
+using Case = SelectedCase;
+
+constexpr natural_t NX = Case::NX;
+constexpr natural_t NY = Case::NY;
+constexpr natural_t NZ = Case::NZ;
+
+constexpr natural_t CELLS = NX * NY * NZ;
+constexpr natural_t STRIDE = NX * NY;
+
+constexpr natural_t NSTEPS = Case::NSTEPS;
+constexpr natural_t STAMP = Case::STAMP;
+
+constexpr real_t RHO_L = Case::RHO_L;
+constexpr real_t RHO_G = Case::RHO_G;
+constexpr real_t MU_L = Case::MU_L;
+constexpr real_t MU_G = Case::MU_G;
+constexpr real_t WIDTH = Case::WIDTH;
+constexpr real_t SIGMA = Case::SIGMA;
+constexpr real_t BETA_CHEM = Case::BETA_CHEM;
+constexpr real_t KAPPA_CHEM = Case::KAPPA_CHEM;
+constexpr real_t TAU_PHI = Case::TAU_PHI;
+constexpr real_t GAMMA = Case::GAMMA;
+constexpr real_t U_CHAR = Case::U_CHAR;
+
+// =================================================================================================== //
+
+constexpr natural_t BLOCK_NX = 32;
+constexpr natural_t BLOCK_NY = 4;
+constexpr natural_t BLOCK_NZ = 4;
+
+constexpr natural_t GRID_X = (NX + BLOCK_NX - 1) / BLOCK_NX;
+constexpr natural_t GRID_Y = (NY + BLOCK_NY - 1) / BLOCK_NY;
+constexpr natural_t GRID_Z = (NZ + BLOCK_NZ - 1) / BLOCK_NZ;
 
 // =================================================================================================== //
