@@ -37,13 +37,13 @@ constexpr natural_t NZ = 512;
 constexpr natural_t JET_DIAMETER = 30;
 
 constexpr real_t U_CHAR = static_cast<real_t>(0.05);
-constexpr real_t REYNOLDS = static_cast<real_t>(3000.0);
-constexpr real_t WEBER = static_cast<real_t>(500.0);
+constexpr real_t REYNOLDS = static_cast<real_t>(1000.0);
+constexpr real_t WEBER = static_cast<real_t>(2500.0);
 
-constexpr real_t RHO_RATIO = static_cast<real_t>(1.0);
+constexpr real_t RHO_RATIO = static_cast<real_t>(1000.0);
 constexpr real_t MU_RATIO = static_cast<real_t>(1.0);
 
-constexpr real_t WIDTH = static_cast<real_t>(6.0);
+constexpr real_t WIDTH = static_cast<real_t>(12.0);
 
 constexpr natural_t NSTEPS = 100000;
 constexpr natural_t STAMP = 1000;
