@@ -19,21 +19,22 @@ struct JetCase
     static constexpr real_t MU_RATIO = static_cast<real_t>(1.0);
 
     static constexpr real_t WIDTH = static_cast<real_t>(12.0);
+    static constexpr real_t R_INIT = static_cast<real_t>(0);
     static constexpr natural_t NSTEPS = 100000;
     static constexpr natural_t STAMP = 1000;
 
     static constexpr real_t RHO_L = static_cast<real_t>(1.0);
     static constexpr real_t RHO_G = RHO_L / RHO_RATIO;
-    static constexpr real_t NU_L = static_cast<real_t>((static_cast<double>(U_CHAR) * static_cast<double>(JET_DIAMETER)) / static_cast<double>(REYNOLDS));
+    static constexpr real_t NU_L = U_CHAR * static_cast<real_t>(JET_DIAMETER) / REYNOLDS;
     static constexpr real_t MU_L = RHO_L * NU_L;
     static constexpr real_t MU_G = MU_L / MU_RATIO;
     static constexpr real_t NU_G = MU_G / RHO_G;
 
-    static constexpr real_t SIGMA = static_cast<real_t>((static_cast<double>(RHO_L) * static_cast<double>(U_CHAR) * static_cast<double>(U_CHAR) * static_cast<double>(JET_DIAMETER)) / static_cast<double>(WEBER));
+    static constexpr real_t SIGMA = RHO_L * U_CHAR * U_CHAR * static_cast<real_t>(JET_DIAMETER) / WEBER;
     static constexpr real_t BETA_CHEM = static_cast<real_t>(12.0) * SIGMA / WIDTH;
     static constexpr real_t KAPPA_CHEM = static_cast<real_t>(1.5) * SIGMA * WIDTH;
     static constexpr real_t TAU_PHI = static_cast<real_t>(1.0);
-    static constexpr real_t DIFF_INT = static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) * (TAU_PHI - static_cast<real_t>(0.5));
+    static constexpr real_t DIFF_INT = (static_cast<real_t>(1) / static_cast<real_t>(3)) * (TAU_PHI - static_cast<real_t>(0.5));
     static constexpr real_t KAPPA_INT = static_cast<real_t>(4.0) * DIFF_INT / WIDTH;
     static constexpr real_t GAMMA = static_cast<real_t>(3.0) * KAPPA_INT;
     static constexpr real_t EXPECTED_DELTA_P = static_cast<real_t>(0);

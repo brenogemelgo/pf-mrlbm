@@ -321,31 +321,35 @@ static inline void writeCaseDiagnostics(
         std::vector<real_t> uz(CELLS);
         std::vector<real_t> pstar(CELLS);
 
-        outputCheckCuda(
-            cudaMemcpy(phi.data(), deviceMoments + CELLS * PHI, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
-            "cudaMemcpy diagnostics phi");
-        outputCheckCuda(
-            cudaMemcpy(ux.data(), deviceMoments + CELLS * UX, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
-            "cudaMemcpy diagnostics ux");
-        outputCheckCuda(
-            cudaMemcpy(uy.data(), deviceMoments + CELLS * UY, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
-            "cudaMemcpy diagnostics uy");
-        outputCheckCuda(
-            cudaMemcpy(uz.data(), deviceMoments + CELLS * UZ, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
-            "cudaMemcpy diagnostics uz");
-        outputCheckCuda(
-            cudaMemcpy(pstar.data(), deviceMoments + CELLS * PSTAR, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
-            "cudaMemcpy diagnostics pstar");
+        outputCheckCuda(cudaMemcpy(phi.data(), deviceMoments + CELLS * PHI, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy diagnostics phi");
+        outputCheckCuda(cudaMemcpy(ux.data(), deviceMoments + CELLS * UX, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy diagnostics ux");
+        outputCheckCuda(cudaMemcpy(uy.data(), deviceMoments + CELLS * UY, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy diagnostics uy");
+        outputCheckCuda(cudaMemcpy(uz.data(), deviceMoments + CELLS * UZ, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy diagnostics uz");
+        outputCheckCuda(cudaMemcpy(pstar.data(), deviceMoments + CELLS * PSTAR, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy diagnostics pstar");
 
-        double mass = 0.0;
+        constexpr double pi = 3.141592653589793238462643383279502884;
+        constexpr double cs2 = 1.0 / 3.0;
+        constexpr double laplaceFactor = 2.0; // sphere: Delta p = 2 sigma / R
+
+        double volumePhi = 0.0;
         double weightedX = 0.0;
         double weightedY = 0.0;
         double weightedZ = 0.0;
+
         double maxU = 0.0;
+
         double pInside = 0.0;
         double pOutside = 0.0;
+
+        double rhoInside = 0.0;
+        double rhoOutside = 0.0;
+
+        double muInside = 0.0;
+        double muOutside = 0.0;
+
         natural_t insideCount = 0;
         natural_t outsideCount = 0;
+
         real_t minPhi = std::numeric_limits<real_t>::max();
         real_t maxPhi = std::numeric_limits<real_t>::lowest();
 
@@ -356,42 +360,128 @@ static inline void writeCaseDiagnostics(
                 for (natural_t x = 0; x < NX; ++x)
                 {
                     const natural_t idx = x + y * NX + z * STRIDE;
-                    const real_t phiValue = phi[idx];
-                    const real_t rho = RHO_G + (RHO_L - RHO_G) * phiValue;
-                    const real_t pPhys = pstar[idx] * static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) * rho;
-                    const double uMag = std::sqrt(static_cast<double>(ux[idx]) * static_cast<double>(ux[idx]) +
-                                                  static_cast<double>(uy[idx]) * static_cast<double>(uy[idx]) +
-                                                  static_cast<double>(uz[idx]) * static_cast<double>(uz[idx]));
 
-                    mass += static_cast<double>(phiValue);
+                    const real_t phiValue = phi[idx];
+
+                    const real_t rho =
+                        Case::RHO_G + (Case::RHO_L - Case::RHO_G) * phiValue;
+
+                    const real_t mu =
+                        Case::MU_G + (Case::MU_L - Case::MU_G) * phiValue;
+
+                    const real_t pPhys =
+                        pstar[idx] * static_cast<real_t>(cs2) * rho;
+
+                    const double uxValue = static_cast<double>(ux[idx]);
+                    const double uyValue = static_cast<double>(uy[idx]);
+                    const double uzValue = static_cast<double>(uz[idx]);
+
+                    const double uMag =
+                        std::sqrt(uxValue * uxValue +
+                                  uyValue * uyValue +
+                                  uzValue * uzValue);
+
+                    volumePhi += static_cast<double>(phiValue);
+
                     weightedX += static_cast<double>(phiValue) * static_cast<double>(x);
                     weightedY += static_cast<double>(phiValue) * static_cast<double>(y);
                     weightedZ += static_cast<double>(phiValue) * static_cast<double>(z);
+
                     maxU = std::max(maxU, uMag);
+
                     minPhi = std::min(minPhi, phiValue);
                     maxPhi = std::max(maxPhi, phiValue);
 
-                    if (phiValue > static_cast<real_t>(0.9))
+                    if (phiValue > static_cast<real_t>(0.999))
                     {
                         pInside += static_cast<double>(pPhys);
+                        rhoInside += static_cast<double>(rho);
+                        muInside += static_cast<double>(mu);
                         ++insideCount;
                     }
-                    else if (phiValue < static_cast<real_t>(0.1))
+                    else if (phiValue < static_cast<real_t>(1.0e-7))
                     {
                         pOutside += static_cast<double>(pPhys);
+                        rhoOutside += static_cast<double>(rho);
+                        muOutside += static_cast<double>(mu);
                         ++outsideCount;
                     }
                 }
             }
         }
 
-        const double invMass = mass > 0.0 ? 1.0 / mass : 0.0;
-        const double avgInside = insideCount > 0 ? pInside / static_cast<double>(insideCount) : 0.0;
-        const double avgOutside = outsideCount > 0 ? pOutside / static_cast<double>(outsideCount) : 0.0;
-        const double deltaP = avgInside - avgOutside;
+        const double invVolumePhi = volumePhi > 0.0 ? 1.0 / volumePhi : 0.0;
+
+        const double comX = weightedX * invVolumePhi;
+        const double comY = weightedY * invVolumePhi;
+        const double comZ = weightedZ * invVolumePhi;
+
+        const double avgInsideP =
+            insideCount > 0 ? pInside / static_cast<double>(insideCount) : 0.0;
+
+        const double avgOutsideP =
+            outsideCount > 0 ? pOutside / static_cast<double>(outsideCount) : 0.0;
+
+        const double avgInsideRho =
+            insideCount > 0 ? rhoInside / static_cast<double>(insideCount) : 0.0;
+
+        const double avgOutsideRho =
+            outsideCount > 0 ? rhoOutside / static_cast<double>(outsideCount) : 0.0;
+
+        const double avgInsideMu =
+            insideCount > 0 ? muInside / static_cast<double>(insideCount) : 0.0;
+
+        const double avgOutsideMu =
+            outsideCount > 0 ? muOutside / static_cast<double>(outsideCount) : 0.0;
+
+        const double deltaP = avgInsideP - avgOutsideP;
+
+        const double effectiveRadius =
+            volumePhi > 0.0
+                ? std::cbrt((3.0 * volumePhi) / (4.0 * pi))
+                : 0.0;
+
+        const double expectedDeltaPInitialRadius =
+            static_cast<double>(Case::R_INIT) > 0.0
+                ? laplaceFactor * static_cast<double>(Case::SIGMA) / static_cast<double>(Case::R_INIT)
+                : 0.0;
+
+        const double expectedDeltaPEffectiveRadius =
+            effectiveRadius > 0.0
+                ? laplaceFactor * static_cast<double>(Case::SIGMA) / effectiveRadius
+                : 0.0;
+
+        const double sigmaRecoveredInitialRadius =
+            deltaP * static_cast<double>(Case::R_INIT) / laplaceFactor;
+
+        const double sigmaRecoveredEffectiveRadius =
+            deltaP * effectiveRadius / laplaceFactor;
+
+        const double sigmaRecoveryRatioInitialRadius =
+            static_cast<double>(Case::SIGMA) != 0.0
+                ? sigmaRecoveredInitialRadius / static_cast<double>(Case::SIGMA)
+                : 0.0;
+
+        const double sigmaRecoveryRatioEffectiveRadius =
+            static_cast<double>(Case::SIGMA) != 0.0
+                ? sigmaRecoveredEffectiveRadius / static_cast<double>(Case::SIGMA)
+                : 0.0;
+
+        const double rhoRatioRecovered =
+            avgOutsideRho != 0.0 ? avgInsideRho / avgOutsideRho : 0.0;
+
+        const double muRatioRecovered =
+            avgOutsideMu != 0.0 ? avgInsideMu / avgOutsideMu : 0.0;
+
+        const double rhoRatioExpected =
+            static_cast<double>(Case::RHO_L) / static_cast<double>(Case::RHO_G);
+
+        const double muRatioExpected =
+            static_cast<double>(Case::MU_L) / static_cast<double>(Case::MU_G);
 
         const std::filesystem::path diagnosticsPath = dir / "diagnostics.csv";
         const bool writeHeader = !std::filesystem::exists(diagnosticsPath);
+
         std::ofstream out(diagnosticsPath, std::ios::app);
         if (!out)
         {
@@ -401,22 +491,61 @@ static inline void writeCaseDiagnostics(
 
         if (writeHeader)
         {
-            out << "step,mass,phi_min,phi_max,max_u,com_x,com_y,com_z,p_inside_avg,p_outside_avg,delta_p,expected_delta_p\n";
+            out << "step,"
+                << "volume_phi,"
+                << "phi_min,"
+                << "phi_max,"
+                << "max_u,"
+                << "com_x,"
+                << "com_y,"
+                << "com_z,"
+                << "radius_eff,"
+                << "rho_inside_avg,"
+                << "rho_outside_avg,"
+                << "rho_ratio_recovered,"
+                << "rho_ratio_expected,"
+                << "mu_inside_avg,"
+                << "mu_outside_avg,"
+                << "mu_ratio_recovered,"
+                << "mu_ratio_expected,"
+                << "p_inside_avg,"
+                << "p_outside_avg,"
+                << "delta_p,"
+                << "expected_delta_p_r0,"
+                << "expected_delta_p_reff,"
+                << "sigma_recovered_r0,"
+                << "sigma_recovered_reff,"
+                << "sigma_recovery_ratio_r0,"
+                << "sigma_recovery_ratio_reff\n";
         }
 
         out << step << ','
             << std::setprecision(10)
-            << mass << ','
+            << volumePhi << ','
             << minPhi << ','
             << maxPhi << ','
             << maxU << ','
-            << weightedX * invMass << ','
-            << weightedY * invMass << ','
-            << weightedZ * invMass << ','
-            << avgInside << ','
-            << avgOutside << ','
+            << comX << ','
+            << comY << ','
+            << comZ << ','
+            << effectiveRadius << ','
+            << avgInsideRho << ','
+            << avgOutsideRho << ','
+            << rhoRatioRecovered << ','
+            << rhoRatioExpected << ','
+            << avgInsideMu << ','
+            << avgOutsideMu << ','
+            << muRatioRecovered << ','
+            << muRatioExpected << ','
+            << avgInsideP << ','
+            << avgOutsideP << ','
             << deltaP << ','
-            << Case::EXPECTED_DELTA_P << '\n';
+            << expectedDeltaPInitialRadius << ','
+            << expectedDeltaPEffectiveRadius << ','
+            << sigmaRecoveredInitialRadius << ','
+            << sigmaRecoveredEffectiveRadius << ','
+            << sigmaRecoveryRatioInitialRadius << ','
+            << sigmaRecoveryRatioEffectiveRadius << '\n';
     }
 }
 

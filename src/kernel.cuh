@@ -94,12 +94,69 @@ __global__ void stream(
     }
     else
     {
+        real_t phiAccum = static_cast<real_t>(0);
+        real_t phiCompensation = static_cast<real_t>(0);
+
         constexpr_for<0, VelocitySet::Q()>(
             [&](const auto Q) noexcept
             {
                 constexpr int cx = VelocitySet::cx<Q>();
                 constexpr int cy = VelocitySet::cy<Q>();
                 constexpr int cz = VelocitySet::cz<Q>();
+
+#if defined(PHI_RESIDUAL_REST)
+                if constexpr (Q == 0)
+                {
+                    const real_t cu = static_cast<real_t>(0);
+                    const real_t mh = moments[midx(idx, MXX)] * VelocitySet::hxx<Q>() +
+                                      moments[midx(idx, MYY)] * VelocitySet::hyy<Q>() +
+                                      moments[midx(idx, MZZ)] * VelocitySet::hzz<Q>() +
+                                      moments[midx(idx, MXY)] * VelocitySet::hxy<Q>() +
+                                      moments[midx(idx, MXZ)] * VelocitySet::hxz<Q>() +
+                                      moments[midx(idx, MYZ)] * VelocitySet::hyz<Q>();
+
+                    const real_t fi = VelocitySet::w<Q>() * (moments[midx(idx, PSTAR)] + cu + mh);
+
+                    pstar += fi;
+                    mxx += fi * VelocitySet::hxx<Q>();
+                    myy += fi * VelocitySet::hyy<Q>();
+                    mzz += fi * VelocitySet::hzz<Q>();
+                    mxy += fi * VelocitySet::hxy<Q>();
+                    mxz += fi * VelocitySet::hxz<Q>();
+                    myz += fi * VelocitySet::hyz<Q>();
+
+                    const real_t phi_src = moments[midx(idx, PHI)];
+
+                    real_t nonRest = static_cast<real_t>(0);
+
+                    constexpr_for<1, VelocitySet::Q()>(
+                        [&](const auto QR) noexcept
+                        {
+                            constexpr int rcx = VelocitySet::cx<QR>();
+                            constexpr int rcy = VelocitySet::cy<QR>();
+                            constexpr int rcz = VelocitySet::cz<QR>();
+
+                            const real_t rcu = static_cast<real_t>(rcx) * moments[midx(idx, UX)] +
+                                               static_cast<real_t>(rcy) * moments[midx(idx, UY)] +
+                                               static_cast<real_t>(rcz) * moments[midx(idx, UZ)];
+
+                            const real_t rgi = VelocitySet::w<QR>() * phi_src * (static_cast<real_t>(1.0) + rcu) +
+                                               VelocitySet::w<QR>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                                                   (static_cast<real_t>(rcx) * normx[idx] +
+                                                    static_cast<real_t>(rcy) * normy[idx] +
+                                                    static_cast<real_t>(rcz) * normz[idx]);
+
+                            nonRest += rgi;
+                        });
+
+                    const real_t giRest = phi_src - nonRest;
+                    const real_t yPhi = giRest - phiCompensation;
+                    const real_t tPhi = phiAccum + yPhi;
+                    phiCompensation = (tPhi - phiAccum) - yPhi;
+                    phiAccum = tPhi;
+                    return;
+                }
+#endif
 
                 const natural_t src = caseNeighborIndex(static_cast<int>(x) - cx,
                                                         static_cast<int>(y) - cy,
@@ -135,8 +192,13 @@ __global__ void stream(
                 mxy += fi * VelocitySet::hxy<Q>();
                 mxz += fi * VelocitySet::hxz<Q>();
                 myz += fi * VelocitySet::hyz<Q>();
-                phi += gi;
+                const real_t yPhi = gi - phiCompensation;
+                const real_t tPhi = phiAccum + yPhi;
+                phiCompensation = (tPhi - phiAccum) - yPhi;
+                phiAccum = tPhi;
             });
+
+        phi = static_cast<real_t>(phiAccum);
     }
 
     dbuffer[midx(idx, PSTAR)] = pstar;
@@ -241,7 +303,6 @@ __global__ void collide(
     dphiz *= VelocitySet::as2();
 
     const real_t lapPhi = static_cast<real_t>(2) * lapAcc * VelocitySet::as2();
-
     const real_t muPhi = static_cast<real_t>(4) * BETA_CHEM * (phi - static_cast<real_t>(1)) * phi * (phi - static_cast<real_t>(0.5)) - KAPPA_CHEM * lapPhi;
 
     forceX += muPhi * dphix;

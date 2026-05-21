@@ -1,5 +1,8 @@
 #include "initialConditions.cuh"
 #include "kernel.cuh"
+#ifdef PHI_CONSERVATION_DIAG
+#include "phaseDiagnostics.cuh"
+#endif
 #include "output.cuh"
 
 // #define BENCHMARK
@@ -68,6 +71,18 @@ int main(int argc, char **argv)
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
     }
+
+#ifdef PHI_CONSERVATION_DIAG
+    runPhaseConservationDiagnostics(moments, dbuffer, normx, normy, normz, grid, block, startStep);
+
+    CUDA_CHECK(cudaFree(momentsAlloc));
+    CUDA_CHECK(cudaFree(dbufferAlloc));
+    CUDA_CHECK(cudaFree(normx));
+    CUDA_CHECK(cudaFree(normy));
+    CUDA_CHECK(cudaFree(normz));
+
+    return 0;
+#endif
 
 #ifndef BENCHMARK
     writeOutput(moments, startStep);

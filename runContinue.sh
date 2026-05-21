@@ -29,5 +29,5 @@ esac
 
 rm -f mrlbm
 
-nvcc -std=c++20 -O3 --restrict --expt-relaxed-constexpr --fmad=true --extra-device-vectorization --extended-lambda -arch=sm_86 -lineinfo -Xptxas -v "$CASE_DEFINE" main.cu -o mrlbm
+nvcc -std=c++20 -O3 --restrict --expt-relaxed-constexpr --fmad=true --extra-device-vectorization --extended-lambda -arch=sm_86 -lineinfo -Xptxas -v "$CASE_DEFINE" src/main.cu -o mrlbm
 ./mrlbm "$SIM_ID" --continue

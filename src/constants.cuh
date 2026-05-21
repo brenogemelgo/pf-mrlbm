@@ -25,9 +25,59 @@
 // =================================================================================================== //
 
 using natural_t = uint32_t;
+#ifdef USE_DOUBLE_PRECISION
+using real_t = double;
+#else
 using real_t = float;
+#endif
 using scalar_t = real_t;
 using mask_t = uint8_t;
+
+namespace math
+{
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t sqrt(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::sqrtf(x);
+        }
+        else
+        {
+            return ::sqrt(x);
+        }
+    }
+
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t tanh(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::tanhf(x);
+        }
+        else
+        {
+            return ::tanh(x);
+        }
+    }
+
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t cos(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::cosf(x);
+        }
+        else
+        {
+            return ::cos(x);
+        }
+    }
+}
+
+// Conservative phase streaming should emit exactly phi from each source cell.
+// Compute the rest phase population as a native real_t residual by default.
+// Define PHI_DIRECT_PHASE_RECONSTRUCTION to use the literal equilibrium for q=0 too.
+#if !defined(PHI_RESIDUAL_REST) && !defined(PHI_DIRECT_PHASE_RECONSTRUCTION)
+#define PHI_RESIDUAL_REST
+#endif
 
 // =================================================================================================== //
 
@@ -90,7 +140,7 @@ constexpr natural_t PHI = 10;
 
 // =================================================================================================== //
 
-#include "cases/caseSelector.cuh"
+#include "../cases/caseSelector.cuh"
 
 using Case = SelectedCase;
 

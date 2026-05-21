@@ -15,7 +15,8 @@ struct RTICase
     static constexpr natural_t NSTEPS = 50000;
     static constexpr natural_t STAMP = 200;
 
-    static constexpr real_t WIDTH = static_cast<real_t>(6.0);
+    static constexpr real_t WIDTH = static_cast<real_t>(4.0);
+    static constexpr real_t R_INIT = static_cast<real_t>(0);
 
     // Density ratio: rho_l / rho_g.
     static constexpr real_t DENSITY_RATIO = static_cast<real_t>(10000.0);
@@ -23,13 +24,13 @@ struct RTICase
     // Dynamic-viscosity ratio: mu_l / mu_g.
     // MU_RATIO = DENSITY_RATIO gives approximately equal kinematic viscosities.
     // MU_RATIO = 1 gives equal dynamic viscosities and high gas kinematic viscosity.
-    static constexpr real_t MU_RATIO = static_cast<real_t>(100.0);
+    static constexpr real_t MU_RATIO = static_cast<real_t>(1000.0);
 
     static constexpr real_t RHO_L = static_cast<real_t>(1.0);
 
     // Characteristic scales for Re and We.
     static constexpr real_t L_CHAR = static_cast<real_t>(NY);
-    static constexpr real_t U_CHAR = static_cast<real_t>(5.0e-2);
+    static constexpr real_t U_CHAR = static_cast<real_t>(2.0e-2);
 
     // Increase REYNOLDS for less viscosity.
     // Decrease WEBER for stronger surface tension.
@@ -40,7 +41,7 @@ struct RTICase
 
     // Initial perturbation amplitude.
     // A0 = 1 is clean. Increase to 2-4 for faster visible RTI.
-    static constexpr real_t A0 = static_cast<real_t>(4.0);
+    static constexpr real_t A0 = static_cast<real_t>(2.0);
 
     // ============================================================================================= //
     // Derived parameters consumed by the solver
@@ -72,7 +73,7 @@ struct RTICase
     static constexpr real_t TAU_PHI = static_cast<real_t>(1.0);
 
     static constexpr real_t DIFF_INT =
-        static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) *
+        (static_cast<real_t>(1) / static_cast<real_t>(3)) *
         (TAU_PHI - static_cast<real_t>(0.5));
 
     static constexpr real_t KAPPA_INT =
@@ -297,7 +298,7 @@ struct RTICase
         const real_t kz =
             twoPi * static_cast<real_t>(z) / static_cast<real_t>(NZ);
 
-        return interfaceCenterY() + A0 * ::cosf(kx) * ::cosf(kz);
+        return interfaceCenterY() + A0 * math::cos(kx) * math::cos(kz);
     }
 
     __device__ __host__ [[nodiscard]] static inline real_t interfacePhi(
@@ -307,8 +308,8 @@ struct RTICase
     {
         return static_cast<real_t>(0.5) *
                (static_cast<real_t>(1) +
-                ::tanhf((static_cast<real_t>(y) - interfaceY(x, z)) /
-                        (static_cast<real_t>(0.5) * WIDTH)));
+                math::tanh((static_cast<real_t>(y) - interfaceY(x, z)) /
+                           (static_cast<real_t>(0.5) * WIDTH)));
     }
 
     __device__ __host__ [[nodiscard]] static inline real_t flatInterfacePhi(
@@ -316,8 +317,8 @@ struct RTICase
     {
         return static_cast<real_t>(0.5) *
                (static_cast<real_t>(1) +
-                ::tanhf((static_cast<real_t>(y) - interfaceCenterY()) /
-                        (static_cast<real_t>(0.5) * WIDTH)));
+                math::tanh((static_cast<real_t>(y) - interfaceCenterY()) /
+                           (static_cast<real_t>(0.5) * WIDTH)));
     }
 
     __device__ __host__ [[nodiscard]] static inline real_t densityFromPhi(
