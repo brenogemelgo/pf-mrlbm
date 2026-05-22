@@ -1,6 +1,6 @@
 #pragma once
 
-#include "D3Q27.cuh"
+#include "velocitySets.cuh"
 
 __device__ [[nodiscard]] static __forceinline__ natural_t global3(
     const natural_t x,

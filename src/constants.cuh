@@ -25,11 +25,7 @@
 // =================================================================================================== //
 
 using natural_t = uint32_t;
-#ifdef USE_DOUBLE_PRECISION
-using real_t = double;
-#else
 using real_t = float;
-#endif
 using scalar_t = real_t;
 using mask_t = uint8_t;
 
@@ -68,6 +64,18 @@ namespace math
         else
         {
             return ::cos(x);
+        }
+    }
+
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t log(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::logf(x);
+        }
+        else
+        {
+            return ::log(x);
         }
     }
 }

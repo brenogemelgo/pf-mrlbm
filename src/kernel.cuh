@@ -3,6 +3,28 @@
 #include "deviceFunctions.cuh"
 #include "irbcBoundary.cuh"
 
+__device__ __host__ [[nodiscard]] static __forceinline__ constexpr real_t phaseVelocityCoefficientScale() noexcept
+{
+    return PhaseVelocitySet::scaleI() / VelocitySet::scaleI();
+}
+
+__device__ [[nodiscard]] static __forceinline__ real_t phaseVelocityCu(
+    const real_t *__restrict__ moments,
+    const natural_t idx,
+    const int cx,
+    const int cy,
+    const int cz) noexcept
+{
+    // Stored UX/UY/UZ are hydrodynamic first-order coefficients; rescale them
+    // to the selected phase lattice's first-order coefficient.
+    constexpr real_t scale = phaseVelocityCoefficientScale();
+
+    return scale *
+           (static_cast<real_t>(cx) * moments[midx(idx, UX)] +
+            static_cast<real_t>(cy) * moments[midx(idx, UY)] +
+            static_cast<real_t>(cz) * moments[midx(idx, UZ)]);
+}
+
 __global__ void computeNormals(
     const real_t *__restrict__ moments,
     real_t *__restrict__ normx,
@@ -24,12 +46,12 @@ __global__ void computeNormals(
     real_t grady = static_cast<real_t>(0);
     real_t gradz = static_cast<real_t>(0);
 
-    constexpr_for<0, VelocitySet::Q()>(
+    constexpr_for<0, GradientVelocitySet::Q()>(
         [&](const auto Q) noexcept
         {
-            constexpr int cx = VelocitySet::cx<Q>();
-            constexpr int cy = VelocitySet::cy<Q>();
-            constexpr int cz = VelocitySet::cz<Q>();
+            constexpr int cx = GradientVelocitySet::cx<Q>();
+            constexpr int cy = GradientVelocitySet::cy<Q>();
+            constexpr int cz = GradientVelocitySet::cz<Q>();
 
             const natural_t src = caseNeighborIndex(static_cast<int>(x) + cx,
                                                     static_cast<int>(y) + cy,
@@ -37,14 +59,14 @@ __global__ void computeNormals(
 
             const real_t phi_q = moments[midx(src, PHI)];
 
-            gradx += VelocitySet::w<Q>() * static_cast<real_t>(cx) * phi_q;
-            grady += VelocitySet::w<Q>() * static_cast<real_t>(cy) * phi_q;
-            gradz += VelocitySet::w<Q>() * static_cast<real_t>(cz) * phi_q;
+            gradx += GradientVelocitySet::w<Q>() * static_cast<real_t>(cx) * phi_q;
+            grady += GradientVelocitySet::w<Q>() * static_cast<real_t>(cy) * phi_q;
+            gradz += GradientVelocitySet::w<Q>() * static_cast<real_t>(cz) * phi_q;
         });
 
-    gradx *= VelocitySet::as2();
-    grady *= VelocitySet::as2();
-    gradz *= VelocitySet::as2();
+    gradx *= GradientVelocitySet::as2();
+    grady *= GradientVelocitySet::as2();
+    gradz *= GradientVelocitySet::as2();
 
     const real_t gradNorm =
         math::sqrt(gradx * gradx + grady * grady + gradz * gradz) +
@@ -62,7 +84,8 @@ __global__ void stream(
     const real_t *__restrict__ normx,
     const real_t *__restrict__ normy,
     const real_t *__restrict__ normz,
-    real_t *__restrict__ dbuffer)
+    real_t *__restrict__ dbuffer,
+    const natural_t step)
 {
     const natural_t x = blockIdx.x * BLOCK_NX + threadIdx.x;
     const natural_t y = blockIdx.y * BLOCK_NY + threadIdx.y;
@@ -90,7 +113,7 @@ __global__ void stream(
 
     if (nodeType != BULK)
     {
-        dispatchIRBCBoundary(moments, x, y, z, nodeType, pstar, ux, uy, uz, mxx, myy, mzz, mxy, mxz, myz, phi);
+        dispatchIRBCBoundary(moments, x, y, z, nodeType, step, pstar, ux, uy, uz, mxx, myy, mzz, mxy, mxz, myz, phi);
     }
     else
     {
@@ -104,47 +127,64 @@ __global__ void stream(
                 constexpr int cy = VelocitySet::cy<Q>();
                 constexpr int cz = VelocitySet::cz<Q>();
 
+                const natural_t src = caseNeighborIndex(static_cast<int>(x) - cx,
+                                                        static_cast<int>(y) - cy,
+                                                        static_cast<int>(z) - cz);
+
+                const real_t cu = static_cast<real_t>(cx) * moments[midx(src, UX)] +
+                                  static_cast<real_t>(cy) * moments[midx(src, UY)] +
+                                  static_cast<real_t>(cz) * moments[midx(src, UZ)];
+
+                const real_t mh = moments[midx(src, MXX)] * VelocitySet::hxx<Q>() +
+                                  moments[midx(src, MYY)] * VelocitySet::hyy<Q>() +
+                                  moments[midx(src, MZZ)] * VelocitySet::hzz<Q>() +
+                                  moments[midx(src, MXY)] * VelocitySet::hxy<Q>() +
+                                  moments[midx(src, MXZ)] * VelocitySet::hxz<Q>() +
+                                  moments[midx(src, MYZ)] * VelocitySet::hyz<Q>();
+
+                const real_t fi = VelocitySet::w<Q>() * (moments[midx(src, PSTAR)] + cu + mh);
+
+                pstar += fi;
+                ux += fi * static_cast<real_t>(cx);
+                uy += fi * static_cast<real_t>(cy);
+                uz += fi * static_cast<real_t>(cz);
+                mxx += fi * VelocitySet::hxx<Q>();
+                myy += fi * VelocitySet::hyy<Q>();
+                mzz += fi * VelocitySet::hzz<Q>();
+                mxy += fi * VelocitySet::hxy<Q>();
+                mxz += fi * VelocitySet::hxz<Q>();
+                myz += fi * VelocitySet::hyz<Q>();
+            });
+
+        constexpr_for<0, PhaseVelocitySet::Q()>(
+            [&](const auto Q) noexcept
+            {
+                constexpr int cx = PhaseVelocitySet::cx<Q>();
+                constexpr int cy = PhaseVelocitySet::cy<Q>();
+                constexpr int cz = PhaseVelocitySet::cz<Q>();
+
 #if defined(PHI_RESIDUAL_REST)
                 if constexpr (Q == 0)
                 {
-                    const real_t cu = static_cast<real_t>(0);
-                    const real_t mh = moments[midx(idx, MXX)] * VelocitySet::hxx<Q>() +
-                                      moments[midx(idx, MYY)] * VelocitySet::hyy<Q>() +
-                                      moments[midx(idx, MZZ)] * VelocitySet::hzz<Q>() +
-                                      moments[midx(idx, MXY)] * VelocitySet::hxy<Q>() +
-                                      moments[midx(idx, MXZ)] * VelocitySet::hxz<Q>() +
-                                      moments[midx(idx, MYZ)] * VelocitySet::hyz<Q>();
-
-                    const real_t fi = VelocitySet::w<Q>() * (moments[midx(idx, PSTAR)] + cu + mh);
-
-                    pstar += fi;
-                    mxx += fi * VelocitySet::hxx<Q>();
-                    myy += fi * VelocitySet::hyy<Q>();
-                    mzz += fi * VelocitySet::hzz<Q>();
-                    mxy += fi * VelocitySet::hxy<Q>();
-                    mxz += fi * VelocitySet::hxz<Q>();
-                    myz += fi * VelocitySet::hyz<Q>();
-
                     const real_t phi_src = moments[midx(idx, PHI)];
 
                     real_t nonRest = static_cast<real_t>(0);
 
-                    constexpr_for<1, VelocitySet::Q()>(
+                    constexpr_for<1, PhaseVelocitySet::Q()>(
                         [&](const auto QR) noexcept
                         {
-                            constexpr int rcx = VelocitySet::cx<QR>();
-                            constexpr int rcy = VelocitySet::cy<QR>();
-                            constexpr int rcz = VelocitySet::cz<QR>();
+                            constexpr int rcx = PhaseVelocitySet::cx<QR>();
+                            constexpr int rcy = PhaseVelocitySet::cy<QR>();
+                            constexpr int rcz = PhaseVelocitySet::cz<QR>();
 
-                            const real_t rcu = static_cast<real_t>(rcx) * moments[midx(idx, UX)] +
-                                               static_cast<real_t>(rcy) * moments[midx(idx, UY)] +
-                                               static_cast<real_t>(rcz) * moments[midx(idx, UZ)];
+                            const real_t rcu = phaseVelocityCu(moments, idx, rcx, rcy, rcz);
 
-                            const real_t rgi = VelocitySet::w<QR>() * phi_src * (static_cast<real_t>(1.0) + rcu) +
-                                               VelocitySet::w<QR>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
-                                                   (static_cast<real_t>(rcx) * normx[idx] +
-                                                    static_cast<real_t>(rcy) * normy[idx] +
-                                                    static_cast<real_t>(rcz) * normz[idx]);
+                            const real_t rgi =
+                                PhaseVelocitySet::w<QR>() * phi_src * (static_cast<real_t>(1.0) + rcu) +
+                                PhaseVelocitySet::w<QR>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                                    (static_cast<real_t>(rcx) * normx[idx] +
+                                     static_cast<real_t>(rcy) * normy[idx] +
+                                     static_cast<real_t>(rcz) * normz[idx]);
 
                             nonRest += rgi;
                         });
@@ -162,36 +202,16 @@ __global__ void stream(
                                                         static_cast<int>(y) - cy,
                                                         static_cast<int>(z) - cz);
 
-                const real_t cu = static_cast<real_t>(cx) * moments[midx(src, UX)] +
-                                  static_cast<real_t>(cy) * moments[midx(src, UY)] +
-                                  static_cast<real_t>(cz) * moments[midx(src, UZ)];
-
-                const real_t mh = moments[midx(src, MXX)] * VelocitySet::hxx<Q>() +
-                                  moments[midx(src, MYY)] * VelocitySet::hyy<Q>() +
-                                  moments[midx(src, MZZ)] * VelocitySet::hzz<Q>() +
-                                  moments[midx(src, MXY)] * VelocitySet::hxy<Q>() +
-                                  moments[midx(src, MXZ)] * VelocitySet::hxz<Q>() +
-                                  moments[midx(src, MYZ)] * VelocitySet::hyz<Q>();
-
+                const real_t cu = phaseVelocityCu(moments, src, cx, cy, cz);
                 const real_t phi_src = moments[midx(src, PHI)];
 
-                const real_t fi = VelocitySet::w<Q>() * (moments[midx(src, PSTAR)] + cu + mh);
-                const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
-                                  VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
-                                      (static_cast<real_t>(cx) * normx[src] +
-                                       static_cast<real_t>(cy) * normy[src] +
-                                       static_cast<real_t>(cz) * normz[src]);
+                const real_t gi =
+                    PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                    PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                        (static_cast<real_t>(cx) * normx[src] +
+                         static_cast<real_t>(cy) * normy[src] +
+                         static_cast<real_t>(cz) * normz[src]);
 
-                pstar += fi;
-                ux += fi * static_cast<real_t>(cx);
-                uy += fi * static_cast<real_t>(cy);
-                uz += fi * static_cast<real_t>(cz);
-                mxx += fi * VelocitySet::hxx<Q>();
-                myy += fi * VelocitySet::hyy<Q>();
-                mzz += fi * VelocitySet::hzz<Q>();
-                mxy += fi * VelocitySet::hxy<Q>();
-                mxz += fi * VelocitySet::hxz<Q>();
-                myz += fi * VelocitySet::hyz<Q>();
                 const real_t yPhi = gi - phiCompensation;
                 const real_t tPhi = phiAccum + yPhi;
                 phiCompensation = (tPhi - phiAccum) - yPhi;
@@ -279,12 +299,12 @@ __global__ void collide(
     real_t dphiz = static_cast<real_t>(0);
     real_t lapAcc = static_cast<real_t>(0);
 
-    constexpr_for<0, VelocitySet::Q()>(
+    constexpr_for<0, GradientVelocitySet::Q()>(
         [&](const auto Q) noexcept
         {
-            constexpr int cx = VelocitySet::cx<Q>();
-            constexpr int cy = VelocitySet::cy<Q>();
-            constexpr int cz = VelocitySet::cz<Q>();
+            constexpr int cx = GradientVelocitySet::cx<Q>();
+            constexpr int cy = GradientVelocitySet::cy<Q>();
+            constexpr int cz = GradientVelocitySet::cz<Q>();
 
             const natural_t src = caseNeighborIndex(static_cast<int>(x) + cx,
                                                     static_cast<int>(y) + cy,
@@ -292,17 +312,17 @@ __global__ void collide(
 
             const real_t phi_q = dbuffer[midx(src, PHI)];
 
-            dphix += VelocitySet::w<Q>() * static_cast<real_t>(cx) * phi_q;
-            dphiy += VelocitySet::w<Q>() * static_cast<real_t>(cy) * phi_q;
-            dphiz += VelocitySet::w<Q>() * static_cast<real_t>(cz) * phi_q;
-            lapAcc += VelocitySet::w<Q>() * (phi_q - phi);
+            dphix += GradientVelocitySet::w<Q>() * static_cast<real_t>(cx) * phi_q;
+            dphiy += GradientVelocitySet::w<Q>() * static_cast<real_t>(cy) * phi_q;
+            dphiz += GradientVelocitySet::w<Q>() * static_cast<real_t>(cz) * phi_q;
+            lapAcc += GradientVelocitySet::w<Q>() * (phi_q - phi);
         });
 
-    dphix *= VelocitySet::as2();
-    dphiy *= VelocitySet::as2();
-    dphiz *= VelocitySet::as2();
+    dphix *= GradientVelocitySet::as2();
+    dphiy *= GradientVelocitySet::as2();
+    dphiz *= GradientVelocitySet::as2();
 
-    const real_t lapPhi = static_cast<real_t>(2) * lapAcc * VelocitySet::as2();
+    const real_t lapPhi = static_cast<real_t>(2) * lapAcc * GradientVelocitySet::as2();
     const real_t muPhi = static_cast<real_t>(4) * BETA_CHEM * (phi - static_cast<real_t>(1)) * phi * (phi - static_cast<real_t>(0.5)) - KAPPA_CHEM * lapPhi;
 
     forceX += muPhi * dphix;

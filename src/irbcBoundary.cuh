@@ -150,6 +150,7 @@ __device__ static __forceinline__ void caseBoundaryState(
     const natural_t y,
     const natural_t z,
     const unsigned int nodeType,
+    const natural_t step,
     real_t &ubx,
     real_t &uby,
     real_t &ubz,
@@ -165,7 +166,7 @@ __device__ static __forceinline__ void caseBoundaryState(
         copiedPhi = moments[midx(src, PHI)];
     }
 
-    Case::boundaryVelocityPhi(x, y, z, nodeType, copiedPhi, ubx, uby, ubz, phiB);
+    Case::boundaryVelocityPhi(x, y, z, nodeType, copiedPhi, step, ubx, uby, ubz, phiB);
 }
 
 // ===================================================================================================================== //
@@ -196,6 +197,7 @@ __device__ static __forceinline__ void applyIRBCBoundaryTyped(
     const natural_t x,
     const natural_t y,
     const natural_t z,
+    const natural_t step,
     real_t &pstar,
     real_t &ux,
     real_t &uy,
@@ -216,7 +218,7 @@ __device__ static __forceinline__ void applyIRBCBoundaryTyped(
     real_t ubz;
     real_t phiB;
 
-    caseBoundaryState(moments, x, y, z, nodeTypeValue, ubx, uby, ubz, phiB);
+    caseBoundaryState(moments, x, y, z, nodeTypeValue, step, ubx, uby, ubz, phiB);
 
     const real_t ub2 = ubx * ubx + uby * uby + ubz * ubz;
 
@@ -300,6 +302,7 @@ __device__ static __forceinline__ void applyIRBCBoundary(
     const natural_t y,
     const natural_t z,
     const unsigned int nodeType,
+    const natural_t step,
     real_t &pstar,
     real_t &ux,
     real_t &uy,
@@ -320,7 +323,7 @@ __device__ static __forceinline__ void applyIRBCBoundary(
     real_t ubz;
     real_t phiB;
 
-    caseBoundaryState(moments, x, y, z, nodeType, ubx, uby, ubz, phiB);
+    caseBoundaryState(moments, x, y, z, nodeType, step, ubx, uby, ubz, phiB);
 
     const real_t ub2 = ubx * ubx + uby * uby + ubz * ubz;
 
@@ -406,6 +409,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
     const natural_t y,
     const natural_t z,
     const unsigned int nodeType,
+    const natural_t step,
     real_t &pstar,
     real_t &ux,
     real_t &uy,
@@ -465,6 +469,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                           x,
                                           y,
                                           z,
+                                          step,
                                           pstar,
                                           ux,
                                           uy,
@@ -483,6 +488,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                            x,
                                            y,
                                            z,
+                                           step,
                                            pstar,
                                            ux,
                                            uy,
@@ -501,6 +507,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                            x,
                                            y,
                                            z,
+                                           step,
                                            pstar,
                                            ux,
                                            uy,
@@ -519,6 +526,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                            x,
                                            y,
                                            z,
+                                           step,
                                            pstar,
                                            ux,
                                            uy,
@@ -537,6 +545,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                            x,
                                            y,
                                            z,
+                                           step,
                                            pstar,
                                            ux,
                                            uy,
@@ -555,6 +564,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                           x,
                                           y,
                                           z,
+                                          step,
                                           pstar,
                                           ux,
                                           uy,
@@ -573,6 +583,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                           x,
                                           y,
                                           z,
+                                          step,
                                           pstar,
                                           ux,
                                           uy,
@@ -591,6 +602,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                                 x,
                                                 y,
                                                 z,
+                                                step,
                                                 pstar,
                                                 ux,
                                                 uy,
@@ -609,6 +621,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                                 x,
                                                 y,
                                                 z,
+                                                step,
                                                 pstar,
                                                 ux,
                                                 uy,
@@ -627,6 +640,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                                 x,
                                                 y,
                                                 z,
+                                                step,
                                                 pstar,
                                                 ux,
                                                 uy,
@@ -645,6 +659,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                                                 x,
                                                 y,
                                                 z,
+                                                step,
                                                 pstar,
                                                 ux,
                                                 uy,
@@ -664,6 +679,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
                           y,
                           z,
                           nodeType,
+                          step,
                           pstar,
                           ux,
                           uy,

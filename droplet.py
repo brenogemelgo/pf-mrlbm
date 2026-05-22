@@ -348,7 +348,9 @@ def print_summary(df):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", type=Path, default=Path("diagnostics.csv"))
+    parser.add_argument(
+        "--csv", type=Path, default=Path("output/staticDroplet/000/diagnostics.csv")
+    )
     parser.add_argument("--outdir", type=Path, default=Path("post/droplet"))
     args = parser.parse_args()
 

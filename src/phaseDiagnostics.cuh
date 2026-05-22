@@ -146,19 +146,17 @@ __global__ void reduceLocalPhaseDefectKernel(
 #if defined(PHI_RESIDUAL_REST)
         real_t nonRest = static_cast<real_t>(0);
 
-        constexpr_for<1, VelocitySet::Q()>(
+        constexpr_for<1, PhaseVelocitySet::Q()>(
             [&](const auto Q) noexcept
             {
-                constexpr int cx = VelocitySet::cx<Q>();
-                constexpr int cy = VelocitySet::cy<Q>();
-                constexpr int cz = VelocitySet::cz<Q>();
+                constexpr int cx = PhaseVelocitySet::cx<Q>();
+                constexpr int cy = PhaseVelocitySet::cy<Q>();
+                constexpr int cz = PhaseVelocitySet::cz<Q>();
 
-                const real_t cu = static_cast<real_t>(cx) * moments[midx(idx, UX)] +
-                                  static_cast<real_t>(cy) * moments[midx(idx, UY)] +
-                                  static_cast<real_t>(cz) * moments[midx(idx, UZ)];
+                const real_t cu = phaseVelocityCu(moments, idx, cx, cy, cz);
 
-                const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
-                                  VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                const real_t gi = PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                                  PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
                                       (static_cast<real_t>(cx) * normx[idx] +
                                        static_cast<real_t>(cy) * normy[idx] +
                                        static_cast<real_t>(cz) * normz[idx]);
@@ -169,19 +167,17 @@ __global__ void reduceLocalPhaseDefectKernel(
         const real_t giRest = phi_src - nonRest;
         emission = nonRest + giRest;
 #else
-        constexpr_for<0, VelocitySet::Q()>(
+        constexpr_for<0, PhaseVelocitySet::Q()>(
             [&](const auto Q) noexcept
             {
-                constexpr int cx = VelocitySet::cx<Q>();
-                constexpr int cy = VelocitySet::cy<Q>();
-                constexpr int cz = VelocitySet::cz<Q>();
+                constexpr int cx = PhaseVelocitySet::cx<Q>();
+                constexpr int cy = PhaseVelocitySet::cy<Q>();
+                constexpr int cz = PhaseVelocitySet::cz<Q>();
 
-                const real_t cu = static_cast<real_t>(cx) * moments[midx(idx, UX)] +
-                                  static_cast<real_t>(cy) * moments[midx(idx, UY)] +
-                                  static_cast<real_t>(cz) * moments[midx(idx, UZ)];
+                const real_t cu = phaseVelocityCu(moments, idx, cx, cy, cz);
 
-                const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
-                                  VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                const real_t gi = PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                                  PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
                                       (static_cast<real_t>(cx) * normx[idx] +
                                        static_cast<real_t>(cy) * normy[idx] +
                                        static_cast<real_t>(cz) * normz[idx]);
@@ -279,7 +275,8 @@ static inline PhaseDefectStats reduceLocalPhaseDefect(
     return stats;
 }
 
-static inline void printVelocitySetDiagnostics()
+template <typename Set>
+static inline void printVelocitySetDiagnosticsFor(const char *label)
 {
     double sumW = 0.0;
     double sumWCx = 0.0;
@@ -290,13 +287,13 @@ static inline void printVelocitySetDiagnostics()
     int maxAbsCz = 0;
     bool hasRest = false;
 
-    constexpr_for<0, VelocitySet::Q()>(
+    constexpr_for<0, Set::Q()>(
         [&](const auto Q) noexcept
         {
-            constexpr int cx = VelocitySet::cx<Q>();
-            constexpr int cy = VelocitySet::cy<Q>();
-            constexpr int cz = VelocitySet::cz<Q>();
-            constexpr double w = static_cast<double>(VelocitySet::w<Q>());
+            constexpr int cx = Set::template cx<Q>();
+            constexpr int cy = Set::template cy<Q>();
+            constexpr int cz = Set::template cz<Q>();
+            constexpr double w = static_cast<double>(Set::template w<Q>());
 
             sumW += w;
             sumWCx += w * static_cast<double>(cx);
@@ -309,7 +306,8 @@ static inline void printVelocitySetDiagnostics()
         });
 
     std::cout << std::setprecision(17);
-    std::cout << "PHI_DIAG velocity_set"
+    std::cout << "PHI_DIAG " << label
+              << " q=" << Set::Q()
               << " sum_w=" << sumW
               << " sum_w_cx=" << sumWCx
               << " sum_w_cy=" << sumWCy
@@ -319,6 +317,13 @@ static inline void printVelocitySetDiagnostics()
               << " max_abs_cy=" << maxAbsCy
               << " max_abs_cz=" << maxAbsCz
               << std::endl;
+}
+
+static inline void printVelocitySetDiagnostics()
+{
+    printVelocitySetDiagnosticsFor<VelocitySet>("hydro_velocity_set");
+    printVelocitySetDiagnosticsFor<PhaseVelocitySet>("phase_velocity_set");
+    printVelocitySetDiagnosticsFor<GradientVelocitySet>("gradient_velocity_set");
 
     std::cout << "PHI_DIAG layout"
               << " midx_0_phi=" << midx(0, PHI)
@@ -382,7 +387,7 @@ static inline void runPhaseConservationDiagnostics(
 
         const PhaseDefectStats defect = reduceLocalPhaseDefect(moments, normx, normy, normz, scratch);
 
-        stream<<<grid, block>>>(moments, normx, normy, normz, dbuffer);
+        stream<<<grid, block>>>(moments, normx, normy, normz, dbuffer, t);
         phaseDiagCheckCuda(cudaGetLastError(), "stream launch");
 
         const double b = reducePhiSum(dbuffer, scratch);

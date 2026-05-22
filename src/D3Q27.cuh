@@ -2,11 +2,16 @@
 
 #include "constants.cuh"
 
-struct VelocitySet
+struct D3Q27VelocitySet
 {
     __device__ __host__ [[nodiscard]] static __forceinline__ consteval natural_t Q() noexcept
     {
         return 27;
+    }
+
+    __device__ __host__ [[nodiscard]] static __forceinline__ consteval natural_t max_abs_c() noexcept
+    {
+        return 1;
     }
 
     template <natural_t dir>
@@ -65,25 +70,25 @@ struct VelocitySet
     {
         if constexpr (dir == 0)
         {
-            return static_cast<real_t>(8) / static_cast<real_t>(27);
+            return static_cast<real_t>(static_cast<double>(8) / static_cast<double>(27));
         }
         else if constexpr (dir <= 6)
         {
-            return static_cast<real_t>(2) / static_cast<real_t>(27);
+            return static_cast<real_t>(static_cast<double>(2) / static_cast<double>(27));
         }
         else if constexpr (dir <= 18)
         {
-            return static_cast<real_t>(1) / static_cast<real_t>(54);
+            return static_cast<real_t>(static_cast<double>(1) / static_cast<double>(54));
         }
         else
         {
-            return static_cast<real_t>(1) / static_cast<real_t>(216);
+            return static_cast<real_t>(static_cast<double>(1) / static_cast<double>(216));
         }
     }
 
     __device__ __host__ [[nodiscard]] static __forceinline__ consteval real_t cs2() noexcept
     {
-        return static_cast<real_t>(1) / static_cast<real_t>(3);
+        return static_cast<real_t>(static_cast<double>(1) / static_cast<double>(3));
     }
 
     __device__ __host__ [[nodiscard]] static __forceinline__ consteval real_t as2() noexcept

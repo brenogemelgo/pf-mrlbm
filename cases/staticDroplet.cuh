@@ -10,8 +10,8 @@ struct StaticDropletCase
 
     static constexpr real_t R_INIT = static_cast<real_t>(48.0);
     static constexpr real_t WIDTH = static_cast<real_t>(6.0);
-    static constexpr real_t RHO_RATIO = static_cast<real_t>(1.0);
-    static constexpr real_t MU_RATIO = static_cast<real_t>(1.0);
+    static constexpr real_t RHO_RATIO = static_cast<real_t>(10000.0);
+    static constexpr real_t MU_RATIO = static_cast<real_t>(1000.0);
     static constexpr real_t SIGMA = static_cast<real_t>(0.03);
     static constexpr real_t U_CHAR = static_cast<real_t>(0);
 
@@ -19,17 +19,27 @@ struct StaticDropletCase
     static constexpr natural_t STAMP = 1000;
 
     static constexpr real_t RHO_L = static_cast<real_t>(1.0);
-    static constexpr real_t RHO_G = RHO_L / RHO_RATIO;
+    static constexpr real_t RHO_G =
+        static_cast<real_t>(static_cast<double>(RHO_L) / static_cast<double>(RHO_RATIO));
     static constexpr real_t MU_L = static_cast<real_t>(1.0e-2);
-    static constexpr real_t MU_G = MU_L / MU_RATIO;
+    static constexpr real_t MU_G =
+        static_cast<real_t>(static_cast<double>(MU_L) / static_cast<double>(MU_RATIO));
 
-    static constexpr real_t BETA_CHEM = static_cast<real_t>(12.0) * SIGMA / WIDTH;
+    static constexpr real_t BETA_CHEM =
+        static_cast<real_t>((static_cast<double>(12.0) * static_cast<double>(SIGMA)) /
+                            static_cast<double>(WIDTH));
     static constexpr real_t KAPPA_CHEM = static_cast<real_t>(1.5) * SIGMA * WIDTH;
     static constexpr real_t TAU_PHI = static_cast<real_t>(1.0);
-    static constexpr real_t DIFF_INT = (static_cast<real_t>(1) / static_cast<real_t>(3)) * (TAU_PHI - static_cast<real_t>(0.5));
-    static constexpr real_t KAPPA_INT = static_cast<real_t>(4.0) * DIFF_INT / WIDTH;
+    static constexpr real_t DIFF_INT =
+        static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) *
+        (TAU_PHI - static_cast<real_t>(0.5));
+    static constexpr real_t KAPPA_INT =
+        static_cast<real_t>((static_cast<double>(4.0) * static_cast<double>(DIFF_INT)) /
+                            static_cast<double>(WIDTH));
     static constexpr real_t GAMMA = static_cast<real_t>(3.0) * KAPPA_INT;
-    static constexpr real_t EXPECTED_DELTA_P = static_cast<real_t>(2.0) * SIGMA / R_INIT;
+    static constexpr real_t EXPECTED_DELTA_P =
+        static_cast<real_t>((static_cast<double>(2.0) * static_cast<double>(SIGMA)) /
+                            static_cast<double>(R_INIT));
 
     static constexpr bool PERIODIC_X = true;
     static constexpr bool PERIODIC_Y = true;
@@ -145,6 +155,7 @@ struct StaticDropletCase
         const natural_t,
         const unsigned int,
         const real_t copiedPhi,
+        const natural_t,
         real_t &ubx,
         real_t &uby,
         real_t &ubz,

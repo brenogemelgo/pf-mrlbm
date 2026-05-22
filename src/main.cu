@@ -108,7 +108,7 @@ int main(int argc, char **argv)
     for (natural_t t = startStep; t < NSTEPS; ++t)
     {
         computeNormals<<<grid, block>>>(moments, normx, normy, normz);
-        stream<<<grid, block>>>(moments, normx, normy, normz, dbuffer);
+        stream<<<grid, block>>>(moments, normx, normy, normz, dbuffer, t);
         collide<<<grid, block>>>(moments, dbuffer);
 
 #ifndef BENCHMARK
