@@ -2,14 +2,18 @@
 
 #include "deviceFunctions.cuh"
 
-#include <cstdint>
 #include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -46,10 +50,12 @@ static inline const char *outputMomentName(const natural_t field)
         return "mxy";
     case MXZ:
         return "mxz";
+    case MYZ:
+        return "myz";
     case PHI:
         return "phi";
     default:
-        return "myz";
+        return "unknown";
     }
 }
 
@@ -72,15 +78,128 @@ static inline std::string outputStepName(const natural_t step)
     return name.str();
 }
 
-static inline std::filesystem::path &outputDirectory()
+static inline std::string outputCaseFolderName()
 {
-    static std::filesystem::path dir = std::filesystem::path("output") / Case::NAME / "default";
-    return dir;
+    std::string name(ActiveCase::NAME);
+    for (char &c : name)
+    {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return name;
 }
 
-static inline void setOutputDirectory(const std::string &simId)
+static inline std::string &simulationRunId()
 {
-    outputDirectory() = std::filesystem::path("output") / Case::NAME / simId;
+    static std::string runId("000");
+    return runId;
+}
+
+static inline void setSimulationRunId(
+    const std::string &runId)
+{
+    simulationRunId() = runId;
+}
+
+static inline std::filesystem::path getSimulationOutputDirectory()
+{
+    return std::filesystem::path("output") / outputCaseFolderName() / simulationRunId();
+}
+
+static inline std::filesystem::path getBinaryOutputDirectory()
+{
+    return getSimulationOutputDirectory() / "binaries";
+}
+
+static inline std::filesystem::path getVtiOutputDirectory()
+{
+    return getSimulationOutputDirectory() / "vtis";
+}
+
+static inline std::filesystem::path getPostOutputDirectory()
+{
+    return getSimulationOutputDirectory() / "post";
+}
+
+static inline std::filesystem::path getMetadataPath()
+{
+    return getSimulationOutputDirectory() / "metadata.txt";
+}
+
+static inline void createOutputDirectories()
+{
+    std::filesystem::create_directories(getBinaryOutputDirectory());
+    std::filesystem::create_directories(getVtiOutputDirectory());
+    std::filesystem::create_directories(getPostOutputDirectory());
+}
+
+static inline void writeMetadata()
+{
+    createOutputDirectories();
+
+    std::ofstream out(getMetadataPath());
+    if (!out)
+    {
+        std::cerr << "Could not open metadata output: " << getMetadataPath() << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
+    out << std::boolalpha << std::setprecision(17);
+    out << "caseName = " << ActiveCase::NAME << '\n';
+    out << "case_name = " << ActiveCase::NAME << '\n';
+    out << "runId = " << simulationRunId() << '\n';
+    out << "NX = " << NX << '\n';
+    out << "NY = " << NY << '\n';
+    out << "NZ = " << NZ << '\n';
+    out << "NSTEPS = " << NSTEPS << '\n';
+    out << "STAMP = " << STAMP << '\n';
+    out << "NUM_MOMENTS = " << NUM_MOMENTS << '\n';
+    out << "velocityScaleI = " << static_cast<double>(VelocitySet::scaleI()) << '\n';
+    out << '\n';
+
+    out << "PERIODIC_X = " << PERIODIC_X << '\n';
+    out << "PERIODIC_Y = " << PERIODIC_Y << '\n';
+    out << "PERIODIC_Z = " << PERIODIC_Z << '\n';
+    out << '\n';
+
+    out << "RHO_L = " << static_cast<double>(RHO_L) << '\n';
+    out << "RHO_G = " << static_cast<double>(RHO_G) << '\n';
+    out << "MU_L = " << static_cast<double>(MU_L) << '\n';
+    out << "MU_G = " << static_cast<double>(MU_G) << '\n';
+    out << "NU_L = " << static_cast<double>(NU_L) << '\n';
+    out << "NU_G = " << static_cast<double>(NU_G) << '\n';
+    out << "RHO_RATIO = " << static_cast<double>(RHO_RATIO) << '\n';
+    out << "MU_RATIO = " << static_cast<double>(MU_RATIO) << '\n';
+    out << "WIDTH = " << static_cast<double>(WIDTH) << '\n';
+    out << "SIGMA = " << static_cast<double>(SIGMA) << '\n';
+    out << "BETA_CHEM = " << static_cast<double>(BETA_CHEM) << '\n';
+    out << "KAPPA_CHEM = " << static_cast<double>(KAPPA_CHEM) << '\n';
+    out << "TAU_PHI = " << static_cast<double>(TAU_PHI) << '\n';
+    out << "GAMMA = " << static_cast<double>(GAMMA) << '\n';
+    out << "U_CHAR = " << static_cast<double>(U_CHAR) << '\n';
+    out << "R_INIT = " << static_cast<double>(R_INIT) << '\n';
+    out << "EXPECTED_DELTA_P = " << static_cast<double>(EXPECTED_DELTA_P) << '\n';
+    out << '\n';
+
+#if defined(CASE_STATIC_DROPLET)
+    out << "ENABLE_STATIC_DROPLET_DIAGNOSTICS = " << ENABLE_STATIC_DROPLET_DIAGNOSTICS << '\n';
+#elif defined(CASE_RTI)
+    out << "verticalDirection = z" << '\n';
+    out << "GRAVITY_X = 0" << '\n';
+    out << "GRAVITY_Y = 0" << '\n';
+    out << "GRAVITY_Z = " << -static_cast<double>(GRAVITY) << '\n';
+    out << "GRAVITY = " << static_cast<double>(GRAVITY) << '\n';
+    out << "REYNOLDS = " << static_cast<double>(REYNOLDS) << '\n';
+    out << "WEBER = " << static_cast<double>(WEBER) << '\n';
+    out << "ATWOOD = " << static_cast<double>(ATWOOD) << '\n';
+    out << "A0 = " << static_cast<double>(A0) << '\n';
+    out << "L_CHAR = " << static_cast<double>(L_CHAR) << '\n';
+#endif
+}
+
+static inline void initializeOutputLayout()
+{
+    createOutputDirectories();
+    writeMetadata();
 }
 
 static inline void writeBinary(
@@ -148,7 +267,7 @@ static inline bool findLatestOutputBinary(
     std::filesystem::path &binaryPath,
     natural_t &step)
 {
-    const std::filesystem::path dir = outputDirectory();
+    const std::filesystem::path dir = getBinaryOutputDirectory();
     if (!std::filesystem::exists(dir))
     {
         return false;
@@ -224,7 +343,7 @@ static inline natural_t loadLatestCheckpoint(
     natural_t step = 0;
     if (!findLatestOutputBinary(binaryPath, step))
     {
-        std::cerr << "No checkpoint found in " << outputDirectory() << std::endl;
+        std::cerr << "No checkpoint found in " << getBinaryOutputDirectory() << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
@@ -263,7 +382,7 @@ static inline void writeVti(
     vti << "  <ImageData WholeExtent=\"0 " << (NX - 1) << " 0 " << (NY - 1) << " 0 " << (NZ - 1)
         << "\" Origin=\"0 0 0\" Spacing=\"1 1 1\">\n";
     vti << "    <Piece Extent=\"0 " << (NX - 1) << " 0 " << (NY - 1) << " 0 " << (NZ - 1) << "\">\n";
-    vti << "      <PointData Scalars=\"rho\">\n";
+    vti << "      <PointData Scalars=\"phi\">\n";
 
     for (natural_t field = 0; field < NUM_MOMENTS; ++field)
     {
@@ -306,7 +425,7 @@ static inline void writeCaseDiagnostics(
     const natural_t step,
     const std::filesystem::path &dir)
 {
-    if constexpr (!Case::ENABLE_STATIC_DROPLET_DIAGNOSTICS)
+    if constexpr (!ENABLE_STATIC_DROPLET_DIAGNOSTICS)
     {
         (void)deviceMoments;
         (void)step;
@@ -364,10 +483,10 @@ static inline void writeCaseDiagnostics(
                     const real_t phiValue = phi[idx];
 
                     const real_t rho =
-                        Case::RHO_G + (Case::RHO_L - Case::RHO_G) * phiValue;
+                        RHO_G + (RHO_L - RHO_G) * phiValue;
 
                     const real_t mu =
-                        Case::MU_G + (Case::MU_L - Case::MU_G) * phiValue;
+                        MU_G + (MU_L - MU_G) * phiValue;
 
                     const real_t pPhys =
                         pstar[idx] * static_cast<real_t>(cs2) * rho;
@@ -442,29 +561,29 @@ static inline void writeCaseDiagnostics(
                 : 0.0;
 
         const double expectedDeltaPInitialRadius =
-            static_cast<double>(Case::R_INIT) > 0.0
-                ? laplaceFactor * static_cast<double>(Case::SIGMA) / static_cast<double>(Case::R_INIT)
+            static_cast<double>(R_INIT) > 0.0
+                ? laplaceFactor * static_cast<double>(SIGMA) / static_cast<double>(R_INIT)
                 : 0.0;
 
         const double expectedDeltaPEffectiveRadius =
             effectiveRadius > 0.0
-                ? laplaceFactor * static_cast<double>(Case::SIGMA) / effectiveRadius
+                ? laplaceFactor * static_cast<double>(SIGMA) / effectiveRadius
                 : 0.0;
 
         const double sigmaRecoveredInitialRadius =
-            deltaP * static_cast<double>(Case::R_INIT) / laplaceFactor;
+            deltaP * static_cast<double>(R_INIT) / laplaceFactor;
 
         const double sigmaRecoveredEffectiveRadius =
             deltaP * effectiveRadius / laplaceFactor;
 
         const double sigmaRecoveryRatioInitialRadius =
-            static_cast<double>(Case::SIGMA) != 0.0
-                ? sigmaRecoveredInitialRadius / static_cast<double>(Case::SIGMA)
+            static_cast<double>(SIGMA) != 0.0
+                ? sigmaRecoveredInitialRadius / static_cast<double>(SIGMA)
                 : 0.0;
 
         const double sigmaRecoveryRatioEffectiveRadius =
-            static_cast<double>(Case::SIGMA) != 0.0
-                ? sigmaRecoveredEffectiveRadius / static_cast<double>(Case::SIGMA)
+            static_cast<double>(SIGMA) != 0.0
+                ? sigmaRecoveredEffectiveRadius / static_cast<double>(SIGMA)
                 : 0.0;
 
         const double rhoRatioRecovered =
@@ -474,10 +593,10 @@ static inline void writeCaseDiagnostics(
             avgOutsideMu != 0.0 ? avgInsideMu / avgOutsideMu : 0.0;
 
         const double rhoRatioExpected =
-            static_cast<double>(Case::RHO_L) / static_cast<double>(Case::RHO_G);
+            static_cast<double>(RHO_L) / static_cast<double>(RHO_G);
 
         const double muRatioExpected =
-            static_cast<double>(Case::MU_L) / static_cast<double>(Case::MU_G);
+            static_cast<double>(MU_L) / static_cast<double>(MU_G);
 
         const std::filesystem::path diagnosticsPath = dir / "diagnostics.csv";
         const bool writeHeader = !std::filesystem::exists(diagnosticsPath);
@@ -549,18 +668,460 @@ static inline void writeCaseDiagnostics(
     }
 }
 
+#ifdef PHI_CONSERVATION_DIAG
+#ifndef PHI_DIAG_STEPS
+#define PHI_DIAG_STEPS 1000
+#endif
+
+#ifndef PHI_DIAG_EVERY
+#define PHI_DIAG_EVERY 100
+#endif
+
+constexpr natural_t PHASE_DIAG_THREADS = 256;
+constexpr natural_t PHASE_DIAG_BLOCKS = (CELLS + PHASE_DIAG_THREADS - 1) / PHASE_DIAG_THREADS;
+
+struct PhaseDefectStats
+{
+    double sumDefect = 0.0;
+    double maxAbsDefect = 0.0;
+    double l1Defect = 0.0;
+    double l2Defect = 0.0;
+};
+
+struct PhaseDiagScratch
+{
+    double *partialSum = nullptr;
+    double *partialMax = nullptr;
+    double *partialL1 = nullptr;
+    double *partialL2 = nullptr;
+
+    std::vector<double> hostSum;
+    std::vector<double> hostMax;
+    std::vector<double> hostL1;
+    std::vector<double> hostL2;
+};
+
+static inline void phaseDiagCheckCuda(const cudaError_t err, const char *call)
+{
+    if (err != cudaSuccess)
+    {
+        std::cerr << "CUDA phase diagnostic error: " << call << ": " << cudaGetErrorString(err) << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+static inline void initPhaseDiagScratch(PhaseDiagScratch &scratch)
+{
+    scratch.hostSum.resize(PHASE_DIAG_BLOCKS);
+    scratch.hostMax.resize(PHASE_DIAG_BLOCKS);
+    scratch.hostL1.resize(PHASE_DIAG_BLOCKS);
+    scratch.hostL2.resize(PHASE_DIAG_BLOCKS);
+
+    phaseDiagCheckCuda(cudaMalloc(reinterpret_cast<void **>(&scratch.partialSum), PHASE_DIAG_BLOCKS * sizeof(double)), "cudaMalloc partialSum");
+    phaseDiagCheckCuda(cudaMalloc(reinterpret_cast<void **>(&scratch.partialMax), PHASE_DIAG_BLOCKS * sizeof(double)), "cudaMalloc partialMax");
+    phaseDiagCheckCuda(cudaMalloc(reinterpret_cast<void **>(&scratch.partialL1), PHASE_DIAG_BLOCKS * sizeof(double)), "cudaMalloc partialL1");
+    phaseDiagCheckCuda(cudaMalloc(reinterpret_cast<void **>(&scratch.partialL2), PHASE_DIAG_BLOCKS * sizeof(double)), "cudaMalloc partialL2");
+}
+
+static inline void freePhaseDiagScratch(PhaseDiagScratch &scratch)
+{
+    if (scratch.partialSum != nullptr)
+    {
+        phaseDiagCheckCuda(cudaFree(scratch.partialSum), "cudaFree partialSum");
+    }
+    if (scratch.partialMax != nullptr)
+    {
+        phaseDiagCheckCuda(cudaFree(scratch.partialMax), "cudaFree partialMax");
+    }
+    if (scratch.partialL1 != nullptr)
+    {
+        phaseDiagCheckCuda(cudaFree(scratch.partialL1), "cudaFree partialL1");
+    }
+    if (scratch.partialL2 != nullptr)
+    {
+        phaseDiagCheckCuda(cudaFree(scratch.partialL2), "cudaFree partialL2");
+    }
+}
+
+__global__ void reducePhiKernel(
+    const real_t *__restrict__ moments,
+    double *__restrict__ partialSum)
+{
+    __shared__ double shared[PHASE_DIAG_THREADS];
+
+    const natural_t tid = threadIdx.x;
+    const natural_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    double value = 0.0;
+    if (idx < CELLS)
+    {
+        value = static_cast<double>(loadMoment(moments, idx, PHI));
+    }
+
+    shared[tid] = value;
+    __syncthreads();
+
+    for (natural_t stride = blockDim.x / 2; stride > 0; stride >>= 1)
+    {
+        if (tid < stride)
+        {
+            shared[tid] += shared[tid + stride];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0)
+    {
+        partialSum[blockIdx.x] = shared[0];
+    }
+}
+
+__global__ void reduceLocalPhaseDefectKernel(
+    const real_t *__restrict__ moments,
+    const real_t *__restrict__ normx,
+    const real_t *__restrict__ normy,
+    const real_t *__restrict__ normz,
+    double *__restrict__ partialSum,
+    double *__restrict__ partialMax,
+    double *__restrict__ partialL1,
+    double *__restrict__ partialL2)
+{
+    __shared__ double sharedSum[PHASE_DIAG_THREADS];
+    __shared__ double sharedMax[PHASE_DIAG_THREADS];
+    __shared__ double sharedL1[PHASE_DIAG_THREADS];
+    __shared__ double sharedL2[PHASE_DIAG_THREADS];
+
+    const natural_t tid = threadIdx.x;
+    const natural_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    double sumValue = 0.0;
+    double maxValue = 0.0;
+    double l1Value = 0.0;
+    double l2Value = 0.0;
+
+    if (idx < CELLS)
+    {
+        const real_t phi_src = loadMoment(moments, idx, PHI);
+
+        real_t emission = static_cast<real_t>(0);
+
+#if defined(PHI_RESIDUAL_REST)
+        real_t nonRest = static_cast<real_t>(0);
+
+        constexpr_for<1, PhaseVelocitySet::Q()>(
+            [&](const auto Q) noexcept
+            {
+                constexpr int cx = PhaseVelocitySet::cx<Q>();
+                constexpr int cy = PhaseVelocitySet::cy<Q>();
+                constexpr int cz = PhaseVelocitySet::cz<Q>();
+
+                const real_t cu = phaseVelocityCu<Q>(moments, idx);
+
+                const real_t gi = PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                                  PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                                      (static_cast<real_t>(cx) * normx[idx] +
+                                       static_cast<real_t>(cy) * normy[idx] +
+                                       static_cast<real_t>(cz) * normz[idx]);
+
+                nonRest += gi;
+            });
+
+        const real_t giRest = phi_src - nonRest;
+        emission = nonRest + giRest;
+#else
+        constexpr_for<0, PhaseVelocitySet::Q()>(
+            [&](const auto Q) noexcept
+            {
+                constexpr int cx = PhaseVelocitySet::cx<Q>();
+                constexpr int cy = PhaseVelocitySet::cy<Q>();
+                constexpr int cz = PhaseVelocitySet::cz<Q>();
+
+                const real_t cu = phaseVelocityCu<Q>(moments, idx);
+
+                const real_t gi = PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                                  PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                                      (static_cast<real_t>(cx) * normx[idx] +
+                                       static_cast<real_t>(cy) * normy[idx] +
+                                       static_cast<real_t>(cz) * normz[idx]);
+
+                emission += gi;
+            });
+#endif
+
+        const double defect = static_cast<double>(emission) - static_cast<double>(phi_src);
+        const double absDefect = defect < 0.0 ? -defect : defect;
+
+        sumValue = defect;
+        maxValue = absDefect;
+        l1Value = absDefect;
+        l2Value = defect * defect;
+    }
+
+    sharedSum[tid] = sumValue;
+    sharedMax[tid] = maxValue;
+    sharedL1[tid] = l1Value;
+    sharedL2[tid] = l2Value;
+    __syncthreads();
+
+    for (natural_t stride = blockDim.x / 2; stride > 0; stride >>= 1)
+    {
+        if (tid < stride)
+        {
+            sharedSum[tid] += sharedSum[tid + stride];
+            sharedMax[tid] = sharedMax[tid] > sharedMax[tid + stride] ? sharedMax[tid] : sharedMax[tid + stride];
+            sharedL1[tid] += sharedL1[tid + stride];
+            sharedL2[tid] += sharedL2[tid + stride];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0)
+    {
+        partialSum[blockIdx.x] = sharedSum[0];
+        partialMax[blockIdx.x] = sharedMax[0];
+        partialL1[blockIdx.x] = sharedL1[0];
+        partialL2[blockIdx.x] = sharedL2[0];
+    }
+}
+
+static inline double reducePhiSum(
+    const real_t *moments,
+    PhaseDiagScratch &scratch)
+{
+    reducePhiKernel<<<PHASE_DIAG_BLOCKS, PHASE_DIAG_THREADS>>>(moments, scratch.partialSum);
+    phaseDiagCheckCuda(cudaGetLastError(), "reducePhiKernel launch");
+    phaseDiagCheckCuda(cudaMemcpy(scratch.hostSum.data(), scratch.partialSum, PHASE_DIAG_BLOCKS * sizeof(double), cudaMemcpyDeviceToHost), "cudaMemcpy phi partialSum");
+
+    double sum = 0.0;
+    for (const double value : scratch.hostSum)
+    {
+        sum += value;
+    }
+    return sum;
+}
+
+static inline PhaseDefectStats reduceLocalPhaseDefect(
+    const real_t *moments,
+    const real_t *normx,
+    const real_t *normy,
+    const real_t *normz,
+    PhaseDiagScratch &scratch)
+{
+    reduceLocalPhaseDefectKernel<<<PHASE_DIAG_BLOCKS, PHASE_DIAG_THREADS>>>(
+        moments,
+        normx,
+        normy,
+        normz,
+        scratch.partialSum,
+        scratch.partialMax,
+        scratch.partialL1,
+        scratch.partialL2);
+
+    phaseDiagCheckCuda(cudaGetLastError(), "reduceLocalPhaseDefectKernel launch");
+    phaseDiagCheckCuda(cudaMemcpy(scratch.hostSum.data(), scratch.partialSum, PHASE_DIAG_BLOCKS * sizeof(double), cudaMemcpyDeviceToHost), "cudaMemcpy defect partialSum");
+    phaseDiagCheckCuda(cudaMemcpy(scratch.hostMax.data(), scratch.partialMax, PHASE_DIAG_BLOCKS * sizeof(double), cudaMemcpyDeviceToHost), "cudaMemcpy defect partialMax");
+    phaseDiagCheckCuda(cudaMemcpy(scratch.hostL1.data(), scratch.partialL1, PHASE_DIAG_BLOCKS * sizeof(double), cudaMemcpyDeviceToHost), "cudaMemcpy defect partialL1");
+    phaseDiagCheckCuda(cudaMemcpy(scratch.hostL2.data(), scratch.partialL2, PHASE_DIAG_BLOCKS * sizeof(double), cudaMemcpyDeviceToHost), "cudaMemcpy defect partialL2");
+
+    PhaseDefectStats stats;
+    double l2Squared = 0.0;
+    for (natural_t i = 0; i < PHASE_DIAG_BLOCKS; ++i)
+    {
+        stats.sumDefect += scratch.hostSum[i];
+        stats.maxAbsDefect = std::max(stats.maxAbsDefect, scratch.hostMax[i]);
+        stats.l1Defect += scratch.hostL1[i];
+        l2Squared += scratch.hostL2[i];
+    }
+
+    stats.l2Defect = std::sqrt(l2Squared);
+    return stats;
+}
+
+template <typename Set>
+static inline void printVelocitySetDiagnosticsFor(const char *label)
+{
+    double sumW = 0.0;
+    double sumWCx = 0.0;
+    double sumWCy = 0.0;
+    double sumWCz = 0.0;
+    int maxAbsCx = 0;
+    int maxAbsCy = 0;
+    int maxAbsCz = 0;
+    bool hasRest = false;
+
+    constexpr_for<0, Set::Q()>(
+        [&](const auto Q) noexcept
+        {
+            constexpr int cx = Set::template cx<Q>();
+            constexpr int cy = Set::template cy<Q>();
+            constexpr int cz = Set::template cz<Q>();
+            constexpr double w = static_cast<double>(Set::template w<Q>());
+
+            sumW += w;
+            sumWCx += w * static_cast<double>(cx);
+            sumWCy += w * static_cast<double>(cy);
+            sumWCz += w * static_cast<double>(cz);
+            maxAbsCx = std::max(maxAbsCx, cx < 0 ? -cx : cx);
+            maxAbsCy = std::max(maxAbsCy, cy < 0 ? -cy : cy);
+            maxAbsCz = std::max(maxAbsCz, cz < 0 ? -cz : cz);
+            hasRest = hasRest || (Q == 0 && cx == 0 && cy == 0 && cz == 0);
+        });
+
+    std::cout << std::setprecision(17);
+    std::cout << "PHI_DIAG " << label
+              << " q=" << Set::Q()
+              << " sum_w=" << sumW
+              << " sum_w_cx=" << sumWCx
+              << " sum_w_cy=" << sumWCy
+              << " sum_w_cz=" << sumWCz
+              << " has_q0_rest=" << (hasRest ? 1 : 0)
+              << " max_abs_cx=" << maxAbsCx
+              << " max_abs_cy=" << maxAbsCy
+              << " max_abs_cz=" << maxAbsCz
+              << std::endl;
+}
+
+static inline void printVelocitySetDiagnostics()
+{
+    printVelocitySetDiagnosticsFor<VelocitySet>("hydro_velocity_set");
+    printVelocitySetDiagnosticsFor<PhaseVelocitySet>("phase_velocity_set");
+    printVelocitySetDiagnosticsFor<GradientVelocitySet>("gradient_velocity_set");
+
+    std::cout << "PHI_DIAG layout"
+              << " midx_0_phi=" << midx(0, PHI)
+              << " cells_phi=" << (CELLS * PHI)
+              << " midx_1_phi=" << midx(1, PHI)
+              << " cells_phi_plus_1=" << (CELLS * PHI + 1)
+              << std::endl;
+}
+
+static inline void runPhaseConservationDiagnostics(
+    real_t *moments,
+    real_t *dbuffer,
+    real_t *normx,
+    real_t *normy,
+    real_t *normz,
+    const dim3 grid,
+    const dim3 block,
+    const natural_t startStep)
+{
+    PhaseDiagScratch scratch;
+    initPhaseDiagScratch(scratch);
+
+    printVelocitySetDiagnostics();
+
+    const natural_t requestedSteps = static_cast<natural_t>(PHI_DIAG_STEPS);
+    const natural_t diagEvery = static_cast<natural_t>(PHI_DIAG_EVERY) > 0
+                                     ? static_cast<natural_t>(PHI_DIAG_EVERY)
+                                     : static_cast<natural_t>(1);
+    const natural_t finalStep = std::min<natural_t>(NSTEPS, startStep + requestedSteps);
+
+    double sumBA = 0.0;
+    double sumCB = 0.0;
+    double sumCA = 0.0;
+    double maxAbsBA = 0.0;
+    double maxAbsCB = 0.0;
+    double maxAbsCA = 0.0;
+    natural_t sampledSteps = 0;
+
+    std::cout << std::setprecision(17);
+    std::cout << "PHI_DIAG mode"
+              << " case=" << ActiveCase::NAME
+              << " cells=" << CELLS
+              << " real_t=" << (std::is_same_v<real_t, float> ? "float" : "double")
+#ifdef PHI_RESIDUAL_REST
+              << " residual_rest=1"
+#else
+              << " residual_rest=0"
+#endif
+              << " steps=" << requestedSteps
+              << " print_every=" << diagEvery
+              << std::endl;
+
+    std::cout << "PHI_DIAG_HEADER step,A_before_stream,B_after_stream,C_after_collide,B_minus_A,C_minus_B,C_minus_A,sum_defect,max_abs_defect,l1_defect,l2_defect" << std::endl;
+
+    for (natural_t t = startStep; t < finalStep; ++t)
+    {
+        const double a = reducePhiSum(moments, scratch);
+
+        computeNormals<<<grid, block>>>(moments, normx, normy, normz);
+        phaseDiagCheckCuda(cudaGetLastError(), "computeNormals launch");
+
+        const PhaseDefectStats defect = reduceLocalPhaseDefect(moments, normx, normy, normz, scratch);
+
+        stream<<<grid, block>>>(moments, normx, normy, normz, dbuffer, t);
+        phaseDiagCheckCuda(cudaGetLastError(), "stream launch");
+
+        const double b = reducePhiSum(dbuffer, scratch);
+
+        collide<<<grid, block>>>(moments, dbuffer);
+        phaseDiagCheckCuda(cudaGetLastError(), "collide launch");
+
+        const double c = reducePhiSum(moments, scratch);
+
+        const double ba = b - a;
+        const double cb = c - b;
+        const double ca = c - a;
+
+        sumBA += ba;
+        sumCB += cb;
+        sumCA += ca;
+        maxAbsBA = std::max(maxAbsBA, std::abs(ba));
+        maxAbsCB = std::max(maxAbsCB, std::abs(cb));
+        maxAbsCA = std::max(maxAbsCA, std::abs(ca));
+        ++sampledSteps;
+
+        const natural_t step = t + static_cast<natural_t>(1);
+        if (step == startStep + static_cast<natural_t>(1) ||
+            step == finalStep ||
+            step % diagEvery == 0)
+        {
+            std::cout << "PHI_DIAG_ROW "
+                      << step << ','
+                      << a << ','
+                      << b << ','
+                      << c << ','
+                      << ba << ','
+                      << cb << ','
+                      << ca << ','
+                      << defect.sumDefect << ','
+                      << defect.maxAbsDefect << ','
+                      << defect.l1Defect << ','
+                      << defect.l2Defect
+                      << std::endl;
+        }
+    }
+
+    const double invSteps = sampledSteps > 0
+                                ? 1.0 / static_cast<double>(sampledSteps)
+                                : 0.0;
+
+    std::cout << "PHI_DIAG_SUMMARY"
+              << " steps=" << sampledSteps
+              << " avg_B_minus_A=" << sumBA * invSteps
+              << " avg_C_minus_B=" << sumCB * invSteps
+              << " avg_C_minus_A=" << sumCA * invSteps
+              << " max_abs_B_minus_A=" << maxAbsBA
+              << " max_abs_C_minus_B=" << maxAbsCB
+              << " max_abs_C_minus_A=" << maxAbsCA
+              << std::endl;
+
+    freePhaseDiagScratch(scratch);
+}
+#endif
+
+
 static inline void writeOutput(
     const real_t *deviceMoments,
     const natural_t step)
 {
-    const std::filesystem::path dir = outputDirectory();
-    std::filesystem::create_directories(dir);
+    createOutputDirectories();
 
     const std::string base = outputStepName(step);
-    const std::filesystem::path binaryPath = dir / (base + ".bin");
-    const std::filesystem::path vtiPath = dir / (base + ".vti");
+    const std::filesystem::path binaryPath = getBinaryOutputDirectory() / (base + ".bin");
+    const std::filesystem::path vtiPath = getVtiOutputDirectory() / (base + ".vti");
 
     writeBinary(deviceMoments, binaryPath);
     writeVti(binaryPath, vtiPath);
-    writeCaseDiagnostics(deviceMoments, step, dir);
+    writeCaseDiagnostics(deviceMoments, step, getPostOutputDirectory());
 }

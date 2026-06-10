@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 
-import argparse
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
+from postCommon import writeDatFile
+
+
+RUN_DIR = Path(".")
+OUTPUT_ROOT = RUN_DIR / "output"
+CASE_NAME = "static_droplet"
+RUN_ID = "000"
+RUN_OUTPUT_DIR = OUTPUT_ROOT / CASE_NAME / RUN_ID
+POST_DIR = RUN_OUTPUT_DIR / "post"
+DIAGNOSTIC_CSV = POST_DIR / "diagnostics.csv"
 
 
 def rel_error(value, reference):
@@ -44,6 +54,12 @@ def plot_series(df, outdir, ycols, title, ylabel, filename, logy=False):
     if not require(df, ["step", *ycols]):
         return
 
+    writeDatFile(
+        outdir / f"{filename}.dat",
+        ["step", *ycols],
+        [df["step"], *[df[col] for col in ycols]],
+    )
+
     plt.figure(figsize=(8.0, 4.5))
 
     for col in ycols:
@@ -68,6 +84,12 @@ def plot_horizontal_reference(
 ):
     if not require(df, ["step", ycol, refcol]):
         return
+
+    writeDatFile(
+        outdir / f"{filename}.dat",
+        ["step", ycol, refcol],
+        [df["step"], df[ycol], df[refcol]],
+    )
 
     plt.figure(figsize=(8.0, 4.5))
 
@@ -347,16 +369,12 @@ def print_summary(df):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--csv", type=Path, default=Path("output/staticDroplet/000/diagnostics.csv")
-    )
-    parser.add_argument("--outdir", type=Path, default=Path("post/droplet"))
-    args = parser.parse_args()
+    if not DIAGNOSTIC_CSV.exists():
+        raise RuntimeError(f"Missing static-droplet diagnostics CSV: {DIAGNOSTIC_CSV}")
 
-    args.outdir.mkdir(parents=True, exist_ok=True)
+    POST_DIR.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_csv(args.csv)
+    df = pd.read_csv(DIAGNOSTIC_CSV)
     df = alias_columns(df)
 
     if "step" not in df.columns:
@@ -368,7 +386,7 @@ def main():
 
     plot_series(
         df,
-        args.outdir,
+        POST_DIR,
         ["phi_min", "phi_max"],
         "Phase-field extrema",
         "phi",
@@ -377,7 +395,7 @@ def main():
 
     plot_series(
         df,
-        args.outdir,
+        POST_DIR,
         ["max_u"],
         "Maximum velocity magnitude",
         "max |u|",
@@ -387,7 +405,7 @@ def main():
 
     plot_series(
         df,
-        args.outdir,
+        POST_DIR,
         ["p_inside_avg", "p_outside_avg"],
         "Average pressure inside and outside droplet",
         "pressure",
@@ -396,7 +414,7 @@ def main():
 
     plot_series(
         df,
-        args.outdir,
+        POST_DIR,
         ["delta_p"],
         "Pressure jump",
         "Delta p",
@@ -405,7 +423,7 @@ def main():
 
     plot_series(
         df,
-        args.outdir,
+        POST_DIR,
         ["rho_inside_avg", "rho_outside_avg"],
         "Average density inside and outside droplet",
         "rho",
@@ -415,7 +433,7 @@ def main():
 
     plot_series(
         df,
-        args.outdir,
+        POST_DIR,
         ["mu_inside_avg", "mu_outside_avg"],
         "Average dynamic viscosity inside and outside droplet",
         "mu",
@@ -423,11 +441,11 @@ def main():
         logy=True,
     )
 
-    plot_derived(df, args.outdir)
+    plot_derived(df, POST_DIR)
 
-    print(f"plots written to: {args.outdir}")
+    print(f"plots and plot data written to: {POST_DIR}")
     print(
-        f"derived CSV written to: {args.outdir / 'diagnostics_with_derived_metrics.csv'}"
+        f"derived CSV written to: {POST_DIR / 'diagnostics_with_derived_metrics.csv'}"
     )
 
 

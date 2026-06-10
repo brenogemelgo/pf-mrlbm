@@ -1,6 +1,6 @@
 #pragma once
 
-#include "velocitySets.cuh"
+#include "D3Q27.cuh"
 
 __device__ [[nodiscard]] static __forceinline__ natural_t global3(
     const natural_t x,
@@ -17,14 +17,52 @@ __device__ __host__ [[nodiscard]] static __forceinline__ natural_t midx(
     return idx + CELLS * moment;
 }
 
+__device__ static __forceinline__ real_t fma_rn(real_t a, real_t b, real_t c)
+{
+    if constexpr (std::is_same_v<real_t, float>)
+    {
+        return __fmaf_rn(a, b, c);
+    }
+    else
+    {
+        return __fma_rn(a, b, c);
+    }
+}
+
+__device__ [[nodiscard]] static __forceinline__ real_t loadMoment(
+    const real_t *__restrict__ moments,
+    const natural_t idx,
+    const natural_t moment) noexcept
+{
+    return __ldg(moments + midx(idx, moment));
+}
+
+__device__ __host__ [[nodiscard]] static __forceinline__ int resolveNeighborCoordinate(
+    const int value,
+    const int extent,
+    const bool periodic) noexcept
+{
+    if (value < 0)
+    {
+        return periodic ? extent - 1 : 0;
+    }
+
+    if (value >= extent)
+    {
+        return periodic ? 0 : extent - 1;
+    }
+
+    return value;
+}
+
 __device__ [[nodiscard]] static __forceinline__ natural_t caseNeighborIndex(
     const int x,
     const int y,
     const int z) noexcept
 {
-    return global3(static_cast<natural_t>(Case::neighborX(x)),
-                   static_cast<natural_t>(Case::neighborY(y)),
-                   static_cast<natural_t>(Case::neighborZ(z)));
+    return global3(static_cast<natural_t>(resolveNeighborCoordinate(x, static_cast<int>(NX), PERIODIC_X)),
+                   static_cast<natural_t>(resolveNeighborCoordinate(y, static_cast<int>(NY), PERIODIC_Y)),
+                   static_cast<natural_t>(resolveNeighborCoordinate(z, static_cast<int>(NZ), PERIODIC_Z)));
 }
 
 template <typename T, T v>

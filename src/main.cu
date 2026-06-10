@@ -1,8 +1,6 @@
+#include "boundary/hostInitialization.cuh"
 #include "initialConditions.cuh"
 #include "kernel.cuh"
-#ifdef PHI_CONSERVATION_DIAG
-#include "phaseDiagnostics.cuh"
-#endif
 #include "output.cuh"
 
 // #define BENCHMARK
@@ -18,22 +16,80 @@
         }                                                                        \
     } while (false)
 
+static void printCaseSummary()
+{
+    std::cout << "selected case: " << ActiveCase::NAME << std::endl;
+    std::cout << "grid: " << NX << " x " << NY << " x " << NZ << std::endl;
+    std::cout << "RHO_L: " << static_cast<double>(RHO_L) << std::endl;
+    std::cout << "RHO_G: " << static_cast<double>(RHO_G) << std::endl;
+    std::cout << "MU_L: " << static_cast<double>(MU_L) << std::endl;
+    std::cout << "MU_G: " << static_cast<double>(MU_G) << std::endl;
+    std::cout << "SIGMA: " << static_cast<double>(SIGMA) << std::endl;
+    std::cout << "TAU_PHI: " << static_cast<double>(TAU_PHI) << std::endl;
+
+#if defined(CASE_RTI)
+    std::cout << "REYNOLDS: " << static_cast<double>(REYNOLDS) << std::endl;
+    std::cout << "WEBER: " << static_cast<double>(WEBER) << std::endl;
+    std::cout << "ATWOOD: " << static_cast<double>(ATWOOD) << std::endl;
+    std::cout << "GRAVITY_Z: " << -static_cast<double>(GRAVITY) << std::endl;
+#endif
+}
+
+static bool isValidRunId(
+    const std::string &runId)
+{
+    return !runId.empty() &&
+           runId != "." &&
+           runId != ".." &&
+           runId.find('/') == std::string::npos &&
+           runId.find('\\') == std::string::npos;
+}
+
 int main(int argc, char **argv)
 {
     bool continueFromCheckpoint = false;
-    std::string simId = "default";
+    std::string runId("000");
+
     for (int arg = 1; arg < argc; ++arg)
     {
-        if (std::strcmp(argv[arg], "--continue") == 0 || std::strcmp(argv[arg], "continue") == 0)
+        const std::string argument(argv[arg]);
+
+        if (argument == "--continue" || argument == "continue")
         {
             continueFromCheckpoint = true;
         }
+        else if (argument == "--runId")
+        {
+            if (arg + 1 >= argc)
+            {
+                std::cerr << "Missing value for --runId" << std::endl;
+                return EXIT_FAILURE;
+            }
+            runId = argv[++arg];
+        }
+        else if (argument.rfind("--runId=", 0) == 0)
+        {
+            runId = argument.substr(std::strlen("--runId="));
+        }
+        else if (!argument.empty() && argument[0] != '-' && runId == "000")
+        {
+            runId = argument;
+        }
         else
         {
-            simId = argv[arg];
+            std::cerr << "Unknown argument: " << argument << std::endl;
+            return EXIT_FAILURE;
         }
     }
-    setOutputDirectory(simId);
+
+    if (!isValidRunId(runId))
+    {
+        std::cerr << "Invalid run id: " << runId << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    setSimulationRunId(runId);
+    initializeOutputLayout();
 
     real_t *moments = nullptr;
     real_t *dbuffer = nullptr;
@@ -67,7 +123,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        caseInit<<<grid, block>>>(moments, dbuffer);
+        initializeCase<<<grid, block>>>(moments, dbuffer);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
     }
@@ -97,8 +153,10 @@ int main(int argc, char **argv)
     {
         std::cout << "simulation start" << std::endl;
     }
-    std::cout << "case: " << Case::NAME << std::endl;
-    std::cout << "output: " << outputDirectory() << std::endl;
+    std::cout << "output: " << getSimulationOutputDirectory() << std::endl;
+    std::cout << "binaries: " << getBinaryOutputDirectory() << std::endl;
+    std::cout << "vtis: " << getVtiOutputDirectory() << std::endl;
+    printCaseSummary();
     const auto start = std::chrono::high_resolution_clock::now();
 #ifndef BENCHMARK
     auto lastStamp = start;

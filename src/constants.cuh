@@ -29,6 +29,12 @@ using real_t = float;
 using scalar_t = real_t;
 using mask_t = uint8_t;
 
+struct D3Q27;
+
+using VelocitySet = D3Q27;
+using PhaseVelocitySet = D3Q27;
+using GradientVelocitySet = D3Q27;
+
 namespace math
 {
     __device__ __host__ [[nodiscard]] static __forceinline__ real_t sqrt(const real_t x) noexcept
@@ -97,13 +103,21 @@ constexpr mask_t NORTH = 1u << 3;
 constexpr mask_t BACK = 1u << 4;
 constexpr mask_t FRONT = 1u << 5;
 
+constexpr mask_t XMIN_FACE = WEST;
+constexpr mask_t XMAX_FACE = EAST;
+constexpr mask_t YMIN_FACE = SOUTH;
+constexpr mask_t YMAX_FACE = NORTH;
+constexpr mask_t ZMIN_FACE = BACK;
+constexpr mask_t ZMAX_FACE = FRONT;
+constexpr mask_t FACE_MASK = XMIN_FACE | XMAX_FACE | YMIN_FACE | YMAX_FACE | ZMIN_FACE | ZMAX_FACE;
+
 // face nodes
-constexpr mask_t NORTH_FACE = NORTH;
-constexpr mask_t SOUTH_FACE = SOUTH;
-constexpr mask_t WEST_FACE = WEST;
-constexpr mask_t EAST_FACE = EAST;
-constexpr mask_t FRONT_FACE = FRONT;
-constexpr mask_t BACK_FACE = BACK;
+constexpr mask_t NORTH_FACE = YMAX_FACE;
+constexpr mask_t SOUTH_FACE = YMIN_FACE;
+constexpr mask_t WEST_FACE = XMIN_FACE;
+constexpr mask_t EAST_FACE = XMAX_FACE;
+constexpr mask_t FRONT_FACE = ZMAX_FACE;
+constexpr mask_t BACK_FACE = ZMIN_FACE;
 
 // edge nodes
 constexpr mask_t NORTH_WEST = NORTH | WEST;
@@ -148,31 +162,103 @@ constexpr natural_t PHI = 10;
 
 // =================================================================================================== //
 
-#include "../cases/caseSelector.cuh"
+#if defined(CASE_STATIC_DROPLET)
+#include "../cases/staticDroplet.cuh"
+using ActiveCase = StaticDropletCase;
+constexpr bool CASE_IS_STATIC_DROPLET = true;
+constexpr bool CASE_IS_RTI = false;
+#elif defined(CASE_RTI)
+#include "../cases/rti.cuh"
+using ActiveCase = RTICase;
+constexpr bool CASE_IS_STATIC_DROPLET = false;
+constexpr bool CASE_IS_RTI = true;
+#else
+#error "No case selected. Compile with -DCASE_STATIC_DROPLET or -DCASE_RTI."
+#endif
 
-using Case = SelectedCase;
-
-constexpr natural_t NX = Case::NX;
-constexpr natural_t NY = Case::NY;
-constexpr natural_t NZ = Case::NZ;
+constexpr natural_t NX = ActiveCase::NX;
+constexpr natural_t NY = ActiveCase::NY;
+constexpr natural_t NZ = ActiveCase::NZ;
 
 constexpr natural_t CELLS = NX * NY * NZ;
 constexpr natural_t STRIDE = NX * NY;
 
-constexpr natural_t NSTEPS = Case::NSTEPS;
-constexpr natural_t STAMP = Case::STAMP;
+constexpr natural_t NSTEPS = ActiveCase::NSTEPS;
+constexpr natural_t STAMP = ActiveCase::STAMP;
 
-constexpr real_t RHO_L = Case::RHO_L;
-constexpr real_t RHO_G = Case::RHO_G;
-constexpr real_t MU_L = Case::MU_L;
-constexpr real_t MU_G = Case::MU_G;
-constexpr real_t WIDTH = Case::WIDTH;
-constexpr real_t SIGMA = Case::SIGMA;
-constexpr real_t BETA_CHEM = Case::BETA_CHEM;
-constexpr real_t KAPPA_CHEM = Case::KAPPA_CHEM;
-constexpr real_t TAU_PHI = Case::TAU_PHI;
-constexpr real_t GAMMA = Case::GAMMA;
-constexpr real_t U_CHAR = Case::U_CHAR;
+constexpr real_t RHO_L = ActiveCase::RHO_L;
+constexpr real_t RHO_RATIO = ActiveCase::RHO_RATIO;
+constexpr real_t RHO_G = static_cast<real_t>(static_cast<double>(RHO_L) / static_cast<double>(RHO_RATIO));
+
+constexpr real_t MU_RATIO = ActiveCase::MU_RATIO;
+constexpr real_t WIDTH = ActiveCase::WIDTH;
+
+#if defined(CASE_RTI)
+constexpr real_t U_CHAR = ActiveCase::U_CHAR;
+constexpr real_t R_INIT = static_cast<real_t>(0);
+constexpr real_t L_CHAR = static_cast<real_t>(NZ);
+constexpr real_t REYNOLDS = ActiveCase::REYNOLDS;
+constexpr real_t WEBER = ActiveCase::WEBER;
+constexpr real_t GRAVITY = ActiveCase::GRAVITY;
+constexpr real_t A0 = ActiveCase::A0;
+constexpr real_t MU_L =
+    static_cast<real_t>((static_cast<double>(RHO_L) *
+                         static_cast<double>(U_CHAR) *
+                         static_cast<double>(L_CHAR)) /
+                        static_cast<double>(REYNOLDS));
+constexpr real_t SIGMA =
+    static_cast<real_t>((static_cast<double>(RHO_L) *
+                         static_cast<double>(U_CHAR) *
+                         static_cast<double>(U_CHAR) *
+                         static_cast<double>(L_CHAR)) /
+                        static_cast<double>(WEBER));
+#else
+constexpr real_t U_CHAR = static_cast<real_t>(0);
+constexpr real_t R_INIT = ActiveCase::R_INIT;
+constexpr real_t L_CHAR = R_INIT;
+constexpr real_t REYNOLDS = static_cast<real_t>(0);
+constexpr real_t WEBER = static_cast<real_t>(0);
+constexpr real_t GRAVITY = static_cast<real_t>(0);
+constexpr real_t A0 = static_cast<real_t>(0);
+constexpr real_t MU_L = ActiveCase::MU_L;
+constexpr real_t SIGMA = ActiveCase::SIGMA;
+#endif
+
+constexpr real_t MU_G = static_cast<real_t>(static_cast<double>(MU_L) / static_cast<double>(MU_RATIO));
+constexpr real_t NU_L = static_cast<real_t>(static_cast<double>(MU_L) / static_cast<double>(RHO_L));
+constexpr real_t NU_G = static_cast<real_t>(static_cast<double>(MU_G) / static_cast<double>(RHO_G));
+
+constexpr real_t BETA_CHEM = static_cast<real_t>((static_cast<double>(12.0) * static_cast<double>(SIGMA)) /
+                                                 static_cast<double>(WIDTH));
+constexpr real_t KAPPA_CHEM = static_cast<real_t>(1.5) * SIGMA * WIDTH;
+constexpr real_t TAU_PHI = ActiveCase::TAU_PHI;
+constexpr real_t DIFF_INT =
+    static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) *
+    (TAU_PHI - static_cast<real_t>(0.5));
+constexpr real_t KAPPA_INT =
+    static_cast<real_t>((static_cast<double>(4.0) * static_cast<double>(DIFF_INT)) /
+                        static_cast<double>(WIDTH));
+constexpr real_t GAMMA = static_cast<real_t>(3.0) * KAPPA_INT;
+
+constexpr real_t ATWOOD =
+    static_cast<real_t>((static_cast<double>(RHO_L) - static_cast<double>(RHO_G)) /
+                        (static_cast<double>(RHO_L) + static_cast<double>(RHO_G)));
+#if defined(CASE_STATIC_DROPLET)
+constexpr real_t EXPECTED_DELTA_P =
+    static_cast<real_t>((static_cast<double>(2.0) * static_cast<double>(SIGMA)) /
+                        static_cast<double>(R_INIT));
+#else
+constexpr real_t EXPECTED_DELTA_P = static_cast<real_t>(0);
+#endif
+
+constexpr bool PERIODIC_X = ActiveCase::PERIODIC_X;
+constexpr bool PERIODIC_Y = ActiveCase::PERIODIC_Y;
+constexpr bool PERIODIC_Z = ActiveCase::PERIODIC_Z;
+#if defined(CASE_STATIC_DROPLET)
+constexpr bool ENABLE_STATIC_DROPLET_DIAGNOSTICS = ActiveCase::ENABLE_STATIC_DROPLET_DIAGNOSTICS;
+#else
+constexpr bool ENABLE_STATIC_DROPLET_DIAGNOSTICS = false;
+#endif
 
 // =================================================================================================== //
 

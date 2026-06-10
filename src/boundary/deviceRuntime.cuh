@@ -1,38 +1,6 @@
 #pragma once
 
-#include "bitmasks.cuh"
-#include "deviceFunctions.cuh"
-
-// ===================================================================================================================== //
-
-constexpr natural_t IRBC_UNKNOWNS = 7;
-constexpr natural_t IRBC_TABLE_STRIDE = IRBC_UNKNOWNS * IRBC_UNKNOWNS;
-constexpr natural_t IRBC_TABLE_SIZE = 64 * IRBC_TABLE_STRIDE;
-
-__device__ __constant__ real_t IRBC_INVERSE[IRBC_TABLE_SIZE];
-
-// ===================================================================================================================== //
-
-template <natural_t dir>
-__device__ [[nodiscard]] static __forceinline__ bool isMissingDirection(
-    const unsigned int nodeType) noexcept
-{
-    return Case::isMissingDirection(nodeType,
-                                    VelocitySet::cx<dir>(),
-                                    VelocitySet::cy<dir>(),
-                                    VelocitySet::cz<dir>());
-}
-
-template <unsigned int nodeTypeValue, natural_t dir>
-__device__ __host__ [[nodiscard]] static inline constexpr bool isMissingDirectionConst() noexcept
-{
-    return Case::isMissingDirection(nodeTypeValue,
-                                    VelocitySet::cx<dir>(),
-                                    VelocitySet::cy<dir>(),
-                                    VelocitySet::cz<dir>());
-}
-
-// ===================================================================================================================== //
+#include "helpers.cuh"
 
 template <natural_t Q>
 __device__ [[nodiscard]] static __forceinline__ real_t reconstructPressureVelocityPopulation(
@@ -50,19 +18,19 @@ __device__ [[nodiscard]] static __forceinline__ real_t reconstructPressureVeloci
                                             static_cast<int>(z) - cz);
 
     const real_t cu =
-        static_cast<real_t>(cx) * moments[midx(src, UX)] +
-        static_cast<real_t>(cy) * moments[midx(src, UY)] +
-        static_cast<real_t>(cz) * moments[midx(src, UZ)];
+        static_cast<real_t>(cx) * loadMoment(moments, src, UX) +
+        static_cast<real_t>(cy) * loadMoment(moments, src, UY) +
+        static_cast<real_t>(cz) * loadMoment(moments, src, UZ);
 
     const real_t mh =
-        moments[midx(src, MXX)] * VelocitySet::hxx<Q>() +
-        moments[midx(src, MYY)] * VelocitySet::hyy<Q>() +
-        moments[midx(src, MZZ)] * VelocitySet::hzz<Q>() +
-        moments[midx(src, MXY)] * VelocitySet::hxy<Q>() +
-        moments[midx(src, MXZ)] * VelocitySet::hxz<Q>() +
-        moments[midx(src, MYZ)] * VelocitySet::hyz<Q>();
+        loadMoment(moments, src, MXX) * VelocitySet::hxx<Q>() +
+        loadMoment(moments, src, MYY) * VelocitySet::hyy<Q>() +
+        loadMoment(moments, src, MZZ) * VelocitySet::hzz<Q>() +
+        loadMoment(moments, src, MXY) * VelocitySet::hxy<Q>() +
+        loadMoment(moments, src, MXZ) * VelocitySet::hxz<Q>() +
+        loadMoment(moments, src, MYZ) * VelocitySet::hyz<Q>();
 
-    return VelocitySet::w<Q>() * (moments[midx(src, PSTAR)] + cu + mh);
+    return VelocitySet::w<Q>() * (loadMoment(moments, src, PSTAR) + cu + mh);
 }
 
 // ===================================================================================================================== //
@@ -86,20 +54,20 @@ __device__ static __forceinline__ void copyCurrentBoundaryMoments(
 {
     const natural_t idx = global3(x, y, z);
 
-    pstar = moments[midx(idx, PSTAR)];
-    ux = moments[midx(idx, UX)];
-    uy = moments[midx(idx, UY)];
-    uz = moments[midx(idx, UZ)];
+    pstar = loadMoment(moments, idx, PSTAR);
+    ux = loadMoment(moments, idx, UX);
+    uy = loadMoment(moments, idx, UY);
+    uz = loadMoment(moments, idx, UZ);
 
-    mxx = moments[midx(idx, MXX)];
-    myy = moments[midx(idx, MYY)];
-    mzz = moments[midx(idx, MZZ)];
+    mxx = loadMoment(moments, idx, MXX);
+    myy = loadMoment(moments, idx, MYY);
+    mzz = loadMoment(moments, idx, MZZ);
 
-    mxy = moments[midx(idx, MXY)];
-    mxz = moments[midx(idx, MXZ)];
-    myz = moments[midx(idx, MYZ)];
+    mxy = loadMoment(moments, idx, MXY);
+    mxz = loadMoment(moments, idx, MXZ);
+    myz = loadMoment(moments, idx, MYZ);
 
-    phi = moments[midx(idx, PHI)];
+    phi = loadMoment(moments, idx, PHI);
 }
 
 __device__ static __forceinline__ void copyCaseOutflowMoments(
@@ -119,27 +87,29 @@ __device__ static __forceinline__ void copyCaseOutflowMoments(
     real_t &myz,
     real_t &phi) noexcept
 {
-    natural_t srcX;
-    natural_t srcY;
-    natural_t srcZ;
-    Case::copyOutflowSource(x, y, z, srcX, srcY, srcZ);
+    natural_t srcX = x;
+    natural_t srcY = y;
+    natural_t srcZ = z;
+    srcX = x;
+    srcY = y;
+    srcZ = z;
 
     const natural_t src = global3(srcX, srcY, srcZ);
 
-    pstar = moments[midx(src, PSTAR)];
-    ux = moments[midx(src, UX)];
-    uy = moments[midx(src, UY)];
-    uz = moments[midx(src, UZ)];
+    pstar = loadMoment(moments, src, PSTAR);
+    ux = loadMoment(moments, src, UX);
+    uy = loadMoment(moments, src, UY);
+    uz = loadMoment(moments, src, UZ);
 
-    mxx = moments[midx(src, MXX)];
-    myy = moments[midx(src, MYY)];
-    mzz = moments[midx(src, MZZ)];
+    mxx = loadMoment(moments, src, MXX);
+    myy = loadMoment(moments, src, MYY);
+    mzz = loadMoment(moments, src, MZZ);
 
-    mxy = moments[midx(src, MXY)];
-    mxz = moments[midx(src, MXZ)];
-    myz = moments[midx(src, MYZ)];
+    mxy = loadMoment(moments, src, MXY);
+    mxz = loadMoment(moments, src, MXZ);
+    myz = loadMoment(moments, src, MYZ);
 
-    phi = moments[midx(src, PHI)];
+    phi = loadMoment(moments, src, PHI);
 }
 
 // ===================================================================================================================== //
@@ -160,13 +130,43 @@ __device__ static __forceinline__ void caseBoundaryState(
     natural_t srcY;
     natural_t srcZ;
     real_t copiedPhi = static_cast<real_t>(0);
-    if (Case::boundaryPhiSource(x, y, z, nodeType, srcX, srcY, srcZ))
+    bool hasPhiSource = nodeType != BULK;
+    if ((nodeType & XMIN_FACE) != 0u)
     {
-        const natural_t src = global3(srcX, srcY, srcZ);
-        copiedPhi = moments[midx(src, PHI)];
+        srcX = static_cast<natural_t>(1);
+    }
+    if ((nodeType & XMAX_FACE) != 0u)
+    {
+        srcX = NX - static_cast<natural_t>(2);
+    }
+    if ((nodeType & YMIN_FACE) != 0u)
+    {
+        srcY = static_cast<natural_t>(1);
+    }
+    if ((nodeType & YMAX_FACE) != 0u)
+    {
+        srcY = NY - static_cast<natural_t>(2);
+    }
+    if ((nodeType & ZMIN_FACE) != 0u)
+    {
+        srcZ = static_cast<natural_t>(1);
+    }
+    if ((nodeType & ZMAX_FACE) != 0u)
+    {
+        srcZ = NZ - static_cast<natural_t>(2);
     }
 
-    Case::boundaryVelocityPhi(x, y, z, nodeType, copiedPhi, step, ubx, uby, ubz, phiB);
+    if (hasPhiSource)
+    {
+        const natural_t src = global3(srcX, srcY, srcZ);
+        copiedPhi = loadMoment(moments, src, PHI);
+    }
+
+    (void)step;
+    ubx = static_cast<real_t>(0);
+    uby = static_cast<real_t>(0);
+    ubz = static_cast<real_t>(0);
+    phiB = copiedPhi;
 }
 
 // ===================================================================================================================== //
@@ -422,7 +422,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
     real_t &myz,
     real_t &phi) noexcept
 {
-    if (Case::isCopyOutflowBoundary(nodeType))
+    if (isCopyOutflowBoundaryRuntime(nodeType))
     {
         copyCaseOutflowMoments(moments,
                                x,
@@ -442,7 +442,7 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
         return;
     }
 
-    if (!Case::hasIRBCBoundary(nodeType))
+    if (!hasIRBCBoundaryRuntime(nodeType))
     {
         copyCurrentBoundaryMoments(moments,
                                    x,
@@ -696,230 +696,3 @@ __device__ static __forceinline__ void dispatchIRBCBoundary(
 }
 
 // ===================================================================================================================== //
-
-template <unsigned int nodeTypeValue>
-__host__ [[nodiscard]] static inline constexpr bool isValidBoundaryTypeConst() noexcept
-{
-    if constexpr (nodeTypeValue == BULK)
-    {
-        return false;
-    }
-    else if constexpr (!Case::hasIRBCBoundary<nodeTypeValue>())
-    {
-        return false;
-    }
-    else if constexpr (Case::isCopyOutflowBoundary<nodeTypeValue>())
-    {
-        return false;
-    }
-    else
-    {
-        return !(((nodeTypeValue & WEST) != 0u && (nodeTypeValue & EAST) != 0u) ||
-                 ((nodeTypeValue & SOUTH) != 0u && (nodeTypeValue & NORTH) != 0u));
-    }
-}
-
-__host__ static inline void invertIRBCMatrix(
-    real_t (&a)[IRBC_UNKNOWNS][IRBC_UNKNOWNS],
-    real_t (&inv)[IRBC_UNKNOWNS][IRBC_UNKNOWNS]) noexcept
-{
-    for (natural_t row = 0; row < IRBC_UNKNOWNS; ++row)
-    {
-        for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
-        {
-            inv[row][col] = row == col ? static_cast<real_t>(1) : static_cast<real_t>(0);
-        }
-    }
-
-    for (natural_t pivot = 0; pivot < IRBC_UNKNOWNS; ++pivot)
-    {
-        natural_t pivotRow = pivot;
-
-        real_t pivotAbs = a[pivot][pivot] < static_cast<real_t>(0)
-                              ? -a[pivot][pivot]
-                              : a[pivot][pivot];
-
-        for (natural_t row = pivot + 1; row < IRBC_UNKNOWNS; ++row)
-        {
-            const real_t valueAbs = a[row][pivot] < static_cast<real_t>(0)
-                                        ? -a[row][pivot]
-                                        : a[row][pivot];
-
-            if (valueAbs > pivotAbs)
-            {
-                pivotAbs = valueAbs;
-                pivotRow = row;
-            }
-        }
-
-        if (pivotRow != pivot)
-        {
-            for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
-            {
-                const real_t tmpA = a[pivot][col];
-                a[pivot][col] = a[pivotRow][col];
-                a[pivotRow][col] = tmpA;
-
-                const real_t tmpInv = inv[pivot][col];
-                inv[pivot][col] = inv[pivotRow][col];
-                inv[pivotRow][col] = tmpInv;
-            }
-        }
-
-        const real_t pivotValue = a[pivot][pivot];
-        const real_t invPivot = static_cast<real_t>(1) / pivotValue;
-
-        for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
-        {
-            a[pivot][col] *= invPivot;
-            inv[pivot][col] *= invPivot;
-        }
-
-        for (natural_t row = 0; row < IRBC_UNKNOWNS; ++row)
-        {
-            if (row == pivot)
-            {
-                continue;
-            }
-
-            const real_t factor = a[row][pivot];
-
-            for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
-            {
-                a[row][col] -= factor * a[pivot][col];
-                inv[row][col] -= factor * inv[pivot][col];
-            }
-        }
-    }
-}
-
-template <unsigned int nodeTypeValue>
-__host__ static inline void assembleIRBCInverse(
-    real_t (&invOut)[IRBC_UNKNOWNS][IRBC_UNKNOWNS]) noexcept
-{
-    real_t densityRow[IRBC_UNKNOWNS] = {
-        static_cast<real_t>(1),
-        static_cast<real_t>(0),
-        static_cast<real_t>(0),
-        static_cast<real_t>(0),
-        static_cast<real_t>(0),
-        static_cast<real_t>(0),
-        static_cast<real_t>(0)};
-
-    real_t momentRows[6][IRBC_UNKNOWNS] = {};
-
-    momentRows[0][1] = static_cast<real_t>(1);
-    momentRows[1][2] = static_cast<real_t>(1);
-    momentRows[2][3] = static_cast<real_t>(1);
-    momentRows[3][4] = static_cast<real_t>(1);
-    momentRows[4][5] = static_cast<real_t>(1);
-    momentRows[5][6] = static_cast<real_t>(1);
-
-    constexpr_for<0, VelocitySet::Q()>(
-        [&](const auto Q) noexcept
-        {
-            if constexpr (!isMissingDirectionConst<nodeTypeValue, Q>())
-            {
-                return;
-            }
-
-            const real_t h[6] = {
-                VelocitySet::hxx<Q>(),
-                VelocitySet::hyy<Q>(),
-                VelocitySet::hzz<Q>(),
-                VelocitySet::hxy<Q>(),
-                VelocitySet::hxz<Q>(),
-                VelocitySet::hyz<Q>()};
-
-            const real_t coeff[IRBC_UNKNOWNS] = {
-                VelocitySet::w<Q>(),
-                VelocitySet::w<Q>() * h[0],
-                VelocitySet::w<Q>() * h[1],
-                VelocitySet::w<Q>() * h[2],
-                VelocitySet::w<Q>() * h[3],
-                VelocitySet::w<Q>() * h[4],
-                VelocitySet::w<Q>() * h[5]};
-
-#pragma unroll
-            for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
-            {
-                densityRow[col] -= coeff[col];
-            }
-
-#pragma unroll
-            for (natural_t row = 0; row < 6; ++row)
-            {
-#pragma unroll
-                for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
-                {
-                    momentRows[row][col] -= h[row] * coeff[col];
-                }
-            }
-        });
-
-    real_t matrix[IRBC_UNKNOWNS][IRBC_UNKNOWNS] = {};
-
-#pragma unroll
-    for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
-    {
-        matrix[0][col] = densityRow[col];
-
-        matrix[1][col] = momentRows[0][col] - momentRows[2][col];
-        matrix[2][col] = momentRows[1][col] - momentRows[2][col];
-
-        matrix[3][col] = momentRows[3][col];
-        matrix[4][col] = momentRows[4][col];
-        matrix[5][col] = momentRows[5][col];
-
-        matrix[6][col] = static_cast<real_t>(0);
-    }
-
-    matrix[6][1] = static_cast<real_t>(1);
-    matrix[6][2] = static_cast<real_t>(1);
-    matrix[6][3] = static_cast<real_t>(1);
-
-    invertIRBCMatrix(matrix, invOut);
-}
-
-template <unsigned int nodeTypeValue>
-__host__ static inline void fillIRBCBoundaryTableEntry(
-    real_t (&hostTable)[IRBC_TABLE_SIZE]) noexcept
-{
-    if constexpr (!isValidBoundaryTypeConst<nodeTypeValue>())
-    {
-        return;
-    }
-    else
-    {
-        real_t inv[IRBC_UNKNOWNS][IRBC_UNKNOWNS] = {};
-
-        assembleIRBCInverse<nodeTypeValue>(inv);
-
-        constexpr natural_t tableOffset =
-            static_cast<natural_t>(nodeTypeValue) * IRBC_TABLE_STRIDE;
-
-#pragma unroll
-        for (natural_t row = 0; row < IRBC_UNKNOWNS; ++row)
-        {
-#pragma unroll
-            for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
-            {
-                hostTable[tableOffset + row * IRBC_UNKNOWNS + col] =
-                    inv[row][col];
-            }
-        }
-    }
-}
-
-__host__ [[nodiscard]] static inline cudaError_t initIRBCBoundaryTables() noexcept
-{
-    real_t hostTable[IRBC_TABLE_SIZE] = {};
-
-    constexpr_for<0, 64>(
-        [&](const auto nodeTypeConst) noexcept
-        {
-            fillIRBCBoundaryTableEntry<nodeTypeConst>(hostTable);
-        });
-
-    return cudaMemcpyToSymbol(IRBC_INVERSE, hostTable, sizeof(hostTable));
-}

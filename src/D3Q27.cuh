@@ -2,7 +2,7 @@
 
 #include "constants.cuh"
 
-struct D3Q27VelocitySet
+struct D3Q27
 {
     __device__ __host__ [[nodiscard]] static __forceinline__ consteval natural_t Q() noexcept
     {
