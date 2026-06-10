@@ -24,7 +24,6 @@ from postCommon import (
     writeReport,
 )
 
-
 DEFAULT_RUN_DIR = getRunDir("rti", "000")
 OUTPUT_SUBDIR = "post_rayleigh_taylor"
 FIGURE_DPI = 600
@@ -119,7 +118,9 @@ def crossingCoordinate(coord, profile, level):
     return None
 
 
-def interfaceBounds(coord, heavyProfile, lowLevel, highLevel, initialInterface, warnings):
+def interfaceBounds(
+    coord, heavyProfile, lowLevel, highLevel, initialInterface, warnings
+):
     lower = crossingCoordinate(coord, heavyProfile, lowLevel)
     upper = crossingCoordinate(coord, heavyProfile, highLevel)
 
@@ -130,11 +131,16 @@ def interfaceBounds(coord, heavyProfile, lowLevel, highLevel, initialInterface, 
                 lower = float(coord[mixed[0]])
             if upper is None:
                 upper = float(coord[mixed[-1]])
-            warn(warnings, "used threshold fallback for one or more RTI interface bounds")
+            warn(
+                warnings, "used threshold fallback for one or more RTI interface bounds"
+            )
         else:
             lower = float(initialInterface)
             upper = float(initialInterface)
-            warn(warnings, "no mixed layer found in horizontally averaged profile; bounds set to initial interface")
+            warn(
+                warnings,
+                "no mixed layer found in horizontally averaged profile; bounds set to initial interface",
+            )
 
     if upper < lower:
         lower, upper = upper, lower
@@ -154,10 +160,16 @@ def timeScale(metadata, warnings):
     length = metadataFloat(metadata, ["L_CHAR", "characteristicLength"], None)
 
     if atwood is None or gravity is None or length is None:
-        warn(warnings, "missing ATWOOD, gravity, or L_CHAR; plotting RTI evolution against lattice step")
+        warn(
+            warnings,
+            "missing ATWOOD, gravity, or L_CHAR; plotting RTI evolution against lattice step",
+        )
         return dt, None
     if atwood <= 0.0 or gravity <= 0.0 or length <= 0.0:
-        warn(warnings, "non-positive ATWOOD, gravity, or L_CHAR; plotting RTI evolution against lattice step")
+        warn(
+            warnings,
+            "non-positive ATWOOD, gravity, or L_CHAR; plotting RTI evolution against lattice step",
+        )
         return dt, None
 
     return dt, np.sqrt(atwood * gravity / length)
@@ -221,10 +233,14 @@ def saveRepresentativeSlices(outDir, runDir, metadata, steps, verticalDirection)
     else:
         selected = [steps[0], steps[len(steps) // 2], steps[-1]]
 
-    fig, axes = plt.subplots(1, len(selected), figsize=(4.0 * len(selected), 4.2), squeeze=False)
+    fig, axes = plt.subplots(
+        1, len(selected), figsize=(4.0 * len(selected), 4.2), squeeze=False
+    )
     for axis, step in zip(axes[0], selected):
         phi, _ = readPhi(runDir, metadata, step)
-        sliceValues, horizontalLabel, verticalLabel = centralSlice(phi, verticalDirection)
+        sliceValues, horizontalLabel, verticalLabel = centralSlice(
+            phi, verticalDirection
+        )
         image = axis.imshow(
             sliceValues,
             origin="lower",
@@ -238,7 +254,9 @@ def saveRepresentativeSlices(outDir, runDir, metadata, steps, verticalDirection)
         axis.set_ylabel(verticalLabel)
     fig.colorbar(image, ax=axes.ravel().tolist(), label="phi", shrink=0.8)
     fig.suptitle("Rayleigh-Taylor phase-field slices")
-    fig.savefig(outDir / "rayleigh_taylor_slices.png", dpi=FIGURE_DPI, bbox_inches="tight")
+    fig.savefig(
+        outDir / "rayleigh_taylor_slices.png", dpi=FIGURE_DPI, bbox_inches="tight"
+    )
     plt.close(fig)
 
 
@@ -304,7 +322,10 @@ def main():
     verticalDirection = metadataText(metadata, "verticalDirection", None)
     if verticalDirection is None:
         verticalDirection = "z"
-        warn(warnings, "verticalDirection missing; using current RTICase convention verticalDirection=z")
+        warn(
+            warnings,
+            "verticalDirection missing; using current RTICase convention verticalDirection=z",
+        )
     verticalDirection = verticalDirection.strip().lower()
 
     heavyPhasePhi = metadataFloat(metadata, "HEAVY_PHASE_PHI", None)
@@ -312,15 +333,23 @@ def main():
         heavyPhasePhi = metadataFloat(metadata, "LIQUID_PHASE_PHI", None)
     if heavyPhasePhi is None:
         heavyPhasePhi = 1.0
-        warn(warnings, "HEAVY_PHASE_PHI missing; using current RTICase convention phi=1 for heavy phase")
+        warn(
+            warnings,
+            "HEAVY_PHASE_PHI missing; using current RTICase convention phi=1 for heavy phase",
+        )
 
     lowLevel = metadataFloat(metadata, "BULK_GAS_PHI_MAX", LOW_MIX_FRACTION)
     highLevel = metadataFloat(metadata, "BULK_LIQUID_PHI_MIN", HIGH_MIX_FRACTION)
-    initialInterface = metadataFloat(metadata, ["INITIAL_INTERFACE_Z", "initialInterface"], None)
+    initialInterface = metadataFloat(
+        metadata, ["INITIAL_INTERFACE_Z", "initialInterface"], None
+    )
     if initialInterface is None:
         nz = getInt(metadata, "NZ")
         initialInterface = 0.5 * float(nz)
-        warn(warnings, "INITIAL_INTERFACE_Z missing; using current RTICase convention 0.5*NZ")
+        warn(
+            warnings,
+            "INITIAL_INTERFACE_Z missing; using current RTICase convention 0.5*NZ",
+        )
 
     dt, tStarFactor = timeScale(metadata, warnings)
     xKey = "t_star" if tStarFactor is not None else "step"
@@ -335,7 +364,9 @@ def main():
         heavy = phaseMeasure(phi, heavyPhasePhi)
         coord = verticalCoordinates(heavy, verticalDirection)
         profile = verticalProfile(heavy, verticalDirection)
-        lower, upper = interfaceBounds(coord, profile, lowLevel, highLevel, initialInterface, warnings)
+        lower, upper = interfaceBounds(
+            coord, profile, lowLevel, highLevel, initialInterface, warnings
+        )
         time = float(step) * dt
         tStar = time * tStarFactor if tStarFactor is not None else np.nan
         rows.append(
