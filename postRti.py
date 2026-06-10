@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from postStaticDroplet import main
+from postRayleighTaylor import main
 
 
 if __name__ == "__main__":

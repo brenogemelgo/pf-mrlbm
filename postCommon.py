@@ -29,6 +29,15 @@ momentNames = [
 fieldAliasMap = {
     "pstar": "pstar",
     "pressureStar": "pstar",
+    "pressure_star": "pstar",
+    "rho": "rho",
+    "density": "rho",
+    "p": "p",
+    "pressure": "pressure",
+    "mu": "mu",
+    "nu": "nu",
+    "viscosity": "viscosity",
+    "dynamicViscosity": "mu",
     "ux": "ux",
     "uX": "ux",
     "velocityX": "ux",
@@ -275,9 +284,14 @@ def readVectorComponents(runDir, metadata, componentNames, selectedStep=None):
 
 def tryReadStandaloneScalarField(runDir, metadata, fieldName):
     canonicalName = canonicalFieldName(fieldName)
-    binaryPath = getBinaryDir(runDir) / f"{canonicalName}.bin"
+    binaryDir = getBinaryDir(runDir)
+    candidates = [binaryDir / f"{canonicalName}.bin"]
+    rawPath = binaryDir / f"{fieldName}.bin"
+    if rawPath not in candidates:
+        candidates.append(rawPath)
 
-    if not binaryPath.exists():
+    binaryPath = next((path for path in candidates if path.exists()), None)
+    if binaryPath is None:
         return None
 
     expectedSize = getExpectedSize(metadata)

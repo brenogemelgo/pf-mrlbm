@@ -154,6 +154,12 @@ static inline void writeMetadata()
     out << "STAMP = " << STAMP << '\n';
     out << "NUM_MOMENTS = " << NUM_MOMENTS << '\n';
     out << "velocityScaleI = " << static_cast<double>(VelocitySet::scaleI()) << '\n';
+    out << "CS2 = " << static_cast<double>(VelocitySet::cs2()) << '\n';
+    out << "DX = 1" << '\n';
+    out << "DY = 1" << '\n';
+    out << "DZ = 1" << '\n';
+    out << "DT = 1" << '\n';
+    out << "FIELD_NAMES = pstar,ux,uy,uz,mxx,myy,mzz,mxy,mxz,myz,phi" << '\n';
     out << '\n';
 
     out << "PERIODIC_X = " << PERIODIC_X << '\n';
@@ -178,10 +184,24 @@ static inline void writeMetadata()
     out << "U_CHAR = " << static_cast<double>(U_CHAR) << '\n';
     out << "R_INIT = " << static_cast<double>(R_INIT) << '\n';
     out << "EXPECTED_DELTA_P = " << static_cast<double>(EXPECTED_DELTA_P) << '\n';
+    out << "PHASE_FIELD = phi" << '\n';
+    out << "PHI_INTERFACE = 0.5" << '\n';
+    out << "PHI_LIQUID = 1" << '\n';
+    out << "PHI_GAS = 0" << '\n';
+    out << "LIQUID_PHASE_PHI = 1" << '\n';
+    out << "GAS_PHASE_PHI = 0" << '\n';
+    out << "BULK_LIQUID_PHI_MIN = 0.95" << '\n';
+    out << "BULK_GAS_PHI_MAX = 0.05" << '\n';
+    out << "DENSITY_INTERPOLATION = RHO_G + (RHO_L - RHO_G) * phi" << '\n';
+    out << "VISCOSITY_INTERPOLATION = MU_G + (MU_L - MU_G) * phi" << '\n';
+    out << "PRESSURE_FIELD = pstar" << '\n';
+    out << "PRESSURE_RECONSTRUCTION = pressure = pstar * CS2 * rho" << '\n';
     out << '\n';
 
 #if defined(CASE_STATIC_DROPLET)
     out << "ENABLE_STATIC_DROPLET_DIAGNOSTICS = " << ENABLE_STATIC_DROPLET_DIAGNOSTICS << '\n';
+    out << "DROPLET_PHASE_PHI = 1" << '\n';
+    out << "AMBIENT_PHASE_PHI = 0" << '\n';
 #elif defined(CASE_RTI)
     out << "verticalDirection = z" << '\n';
     out << "GRAVITY_X = 0" << '\n';
@@ -193,6 +213,12 @@ static inline void writeMetadata()
     out << "ATWOOD = " << static_cast<double>(ATWOOD) << '\n';
     out << "A0 = " << static_cast<double>(A0) << '\n';
     out << "L_CHAR = " << static_cast<double>(L_CHAR) << '\n';
+    out << "INITIAL_INTERFACE_Z = " << static_cast<double>(0.5) * static_cast<double>(NZ) << '\n';
+    out << "INITIAL_PERTURBATION_AMPLITUDE = " << static_cast<double>(A0) << '\n';
+    out << "PERTURBATION_WAVELENGTH_X = " << static_cast<double>(NX) << '\n';
+    out << "PERTURBATION_WAVELENGTH_Y = " << static_cast<double>(NY) << '\n';
+    out << "HEAVY_PHASE_PHI = 1" << '\n';
+    out << "LIGHT_PHASE_PHI = 0" << '\n';
 #endif
 }
 
