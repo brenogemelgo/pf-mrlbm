@@ -129,22 +129,20 @@ __host__ static inline void assembleIRBCInverse(
                 return;
             }
 
-            const real_t h[6] = {
-                VelocitySet::hxx<Q>(),
-                VelocitySet::hyy<Q>(),
-                VelocitySet::hzz<Q>(),
-                VelocitySet::hxy<Q>(),
-                VelocitySet::hxz<Q>(),
-                VelocitySet::hyz<Q>()};
+            const real_t h[6] = {VelocitySet::hxx<Q>(),
+                                 VelocitySet::hyy<Q>(),
+                                 VelocitySet::hzz<Q>(),
+                                 VelocitySet::hxy<Q>(),
+                                 VelocitySet::hxz<Q>(),
+                                 VelocitySet::hyz<Q>()};
 
-            const real_t coeff[IRBC_UNKNOWNS] = {
-                VelocitySet::w<Q>(),
-                VelocitySet::w<Q>() * h[0],
-                VelocitySet::w<Q>() * h[1],
-                VelocitySet::w<Q>() * h[2],
-                VelocitySet::w<Q>() * h[3],
-                VelocitySet::w<Q>() * h[4],
-                VelocitySet::w<Q>() * h[5]};
+            const real_t coeff[IRBC_UNKNOWNS] = {VelocitySet::w<Q>(),
+                                                 VelocitySet::w<Q>() * h[0],
+                                                 VelocitySet::w<Q>() * h[1],
+                                                 VelocitySet::w<Q>() * h[2],
+                                                 VelocitySet::w<Q>() * h[3],
+                                                 VelocitySet::w<Q>() * h[4],
+                                                 VelocitySet::w<Q>() * h[5]};
 
 #pragma unroll
             for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
@@ -169,14 +167,11 @@ __host__ static inline void assembleIRBCInverse(
     for (natural_t col = 0; col < IRBC_UNKNOWNS; ++col)
     {
         matrix[0][col] = densityRow[col];
-
         matrix[1][col] = momentRows[0][col] - momentRows[2][col];
         matrix[2][col] = momentRows[1][col] - momentRows[2][col];
-
         matrix[3][col] = momentRows[3][col];
         matrix[4][col] = momentRows[4][col];
         matrix[5][col] = momentRows[5][col];
-
         matrix[6][col] = static_cast<real_t>(0);
     }
 
@@ -201,8 +196,7 @@ __host__ static inline void fillIRBCBoundaryTableEntry(
 
         assembleIRBCInverse<nodeTypeValue>(inv);
 
-        constexpr natural_t tableOffset =
-            static_cast<natural_t>(nodeTypeValue) * IRBC_TABLE_STRIDE;
+        constexpr natural_t tableOffset = static_cast<natural_t>(nodeTypeValue) * IRBC_TABLE_STRIDE;
 
 #pragma unroll
         for (natural_t row = 0; row < IRBC_UNKNOWNS; ++row)

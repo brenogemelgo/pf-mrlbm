@@ -22,8 +22,7 @@ __device__ __host__ [[nodiscard]] static __forceinline__ real_t staticDropletPhi
     const real_t dz = static_cast<real_t>(z) - zc;
     const real_t r = math::sqrt(dx * dx + dy * dy + dz * dz);
 
-    return static_cast<real_t>(0.5) *
-           (static_cast<real_t>(1) - math::tanh((r - R_INIT) / (static_cast<real_t>(0.5) * WIDTH)));
+    return static_cast<real_t>(0.5) * (static_cast<real_t>(1) - math::tanh((r - R_INIT) / (static_cast<real_t>(0.5) * WIDTH)));
 }
 
 __device__ __host__ [[nodiscard]] static __forceinline__ real_t rtiInterfaceCenterZ() noexcept
@@ -48,19 +47,13 @@ __device__ __host__ [[nodiscard]] static __forceinline__ real_t rtiInterfacePhi(
     const natural_t y,
     const natural_t z) noexcept
 {
-    return static_cast<real_t>(0.5) *
-           (static_cast<real_t>(1) +
-            math::tanh((static_cast<real_t>(z) - rtiInterfaceZ(x, y)) /
-                       (static_cast<real_t>(0.5) * WIDTH)));
+    return static_cast<real_t>(0.5) * (static_cast<real_t>(1) + math::tanh((static_cast<real_t>(z) - rtiInterfaceZ(x, y)) / (static_cast<real_t>(0.5) * WIDTH)));
 }
 
 __device__ __host__ [[nodiscard]] static __forceinline__ real_t rtiFlatInterfacePhi(
     const natural_t z) noexcept
 {
-    return static_cast<real_t>(0.5) *
-           (static_cast<real_t>(1) +
-            math::tanh((static_cast<real_t>(z) - rtiInterfaceCenterZ()) /
-                       (static_cast<real_t>(0.5) * WIDTH)));
+    return static_cast<real_t>(0.5) * (static_cast<real_t>(1) + math::tanh((static_cast<real_t>(z) - rtiInterfaceCenterZ()) / (static_cast<real_t>(0.5) * WIDTH)));
 }
 
 __device__ __host__ [[nodiscard]] static __forceinline__ real_t rtiHydrostaticPressure(
@@ -115,11 +108,9 @@ __device__ __host__ static __forceinline__ void initialMomentFields(
     const real_t rho = densityFromPhi(phi);
 
     pstar = static_cast<real_t>(3.0) * pPhys / rho;
-
     ux = static_cast<real_t>(0);
     uy = static_cast<real_t>(0);
     uz = static_cast<real_t>(0);
-
     mxx = static_cast<real_t>(0);
     myy = static_cast<real_t>(0);
     mzz = static_cast<real_t>(0);

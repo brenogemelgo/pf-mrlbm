@@ -57,10 +57,9 @@ __host__ __device__ [[nodiscard]] static inline constexpr bool hasIRBCBoundaryCo
 __device__ [[nodiscard]] static inline bool hasIRBCBoundaryRuntime(
     const unsigned int nodeType) noexcept
 {
-    return nodeType != BULK &&
-           !(((nodeType & XMIN_FACE) != 0u && (nodeType & XMAX_FACE) != 0u) ||
-             ((nodeType & YMIN_FACE) != 0u && (nodeType & YMAX_FACE) != 0u) ||
-             ((nodeType & ZMIN_FACE) != 0u && (nodeType & ZMAX_FACE) != 0u));
+    return nodeType != BULK && !(((nodeType & XMIN_FACE) != 0u && (nodeType & XMAX_FACE) != 0u) ||
+                                 ((nodeType & YMIN_FACE) != 0u && (nodeType & YMAX_FACE) != 0u) ||
+                                 ((nodeType & ZMIN_FACE) != 0u && (nodeType & ZMAX_FACE) != 0u));
 }
 
 template <unsigned int>

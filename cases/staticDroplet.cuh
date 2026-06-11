@@ -12,7 +12,7 @@ struct StaticDropletCase
     static constexpr natural_t STAMP = 1000;
 
     static constexpr real_t R_INIT = static_cast<real_t>(48.0);
-    static constexpr real_t WIDTH = static_cast<real_t>(6.0);
+    static constexpr real_t WIDTH = static_cast<real_t>(4.0);
 
     static constexpr real_t RHO_L = static_cast<real_t>(1.0);
     static constexpr real_t RHO_RATIO = static_cast<real_t>(10000.0);
