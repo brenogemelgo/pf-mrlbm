@@ -1,12 +1,18 @@
-#!/usr/bin/env python3
+caseName = "static_droplet"
+runId = "000"
+selectedStep = None
+outputRoot = "output"
+outputSubdir = "post_static_droplet"
+showPlots = False
+figureDpi = 600
+vectorTargetCount = 28
 
-from pathlib import Path
 import csv
-import sys
 
 import matplotlib
 
-matplotlib.use("Agg")
+if not showPlots:
+    matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,13 +29,6 @@ from postCommon import (
     writeDatFile,
     writeReport,
 )
-
-
-DEFAULT_RUN_DIR = getRunDir("static_droplet", "000")
-OUTPUT_SUBDIR = "post_static_droplet"
-SELECTED_STEP = None
-FIGURE_DPI = 600
-VECTOR_TARGET_COUNT = 28
 
 
 def warn(warnings, message):
@@ -194,7 +193,9 @@ def savePhiSlice(outDir, phi, interfacePhi, step):
     plt.ylabel("z")
     plt.title(f"Static droplet phase field, step {step}")
     plt.tight_layout()
-    plt.savefig(outDir / "static_droplet_slice_phi.png", dpi=FIGURE_DPI)
+    plt.savefig(outDir / "static_droplet_slice_phi.png", dpi=figureDpi)
+    if showPlots:
+        plt.show()
     plt.close()
 
 
@@ -206,7 +207,7 @@ def saveSpuriousCurrents(outDir, phi, ux, uz, interfacePhi, step):
     uzSlice = uz[:, centerY, :]
     speedSlice = np.sqrt(uxSlice * uxSlice + uzSlice * uzSlice)
 
-    stride = max(1, min(nx, nz) // VECTOR_TARGET_COUNT)
+    stride = max(1, min(nx, nz) // vectorTargetCount)
     xValues = np.arange(nx)
     zValues = np.arange(nz)
     xGrid, zGrid = np.meshgrid(xValues, zValues, indexing="xy")
@@ -242,7 +243,9 @@ def saveSpuriousCurrents(outDir, phi, ux, uz, interfacePhi, step):
     plt.ylabel("z")
     plt.title(f"Static droplet spurious currents, step {step}")
     plt.tight_layout()
-    plt.savefig(outDir / "static_droplet_spurious_currents.png", dpi=FIGURE_DPI)
+    plt.savefig(outDir / "static_droplet_spurious_currents.png", dpi=figureDpi)
+    if showPlots:
+        plt.show()
     plt.close()
 
 
@@ -274,7 +277,9 @@ def saveProfile(outDir, phi, pressure, interfacePhi):
         ax2.set_ylabel("pressure")
     plt.title("Static droplet centerline profile")
     plt.tight_layout()
-    plt.savefig(outDir / "static_droplet_profile.png", dpi=FIGURE_DPI)
+    plt.savefig(outDir / "static_droplet_profile.png", dpi=figureDpi)
+    if showPlots:
+        plt.show()
     plt.close()
 
 
@@ -295,25 +300,17 @@ def writeSummary(outDir, metrics, warnings):
     writeReport(outDir / "static_droplet_summary.txt", reportLines)
 
 
-def resolveRunDir():
-    if len(sys.argv) > 2:
-        raise SystemExit("usage: python3 postStaticDroplet.py [path/to/run]")
-    if len(sys.argv) == 2:
-        return Path(sys.argv[1])
-    return DEFAULT_RUN_DIR
-
-
 def main():
-    runDir = resolveRunDir()
+    runDir = getRunDir(caseName, runId, outputRoot)
     metadata = readMetadata(runDir)
-    outDir = runDir / OUTPUT_SUBDIR
+    outDir = runDir / outputSubdir
     outDir.mkdir(parents=True, exist_ok=True)
     warnings = []
 
     print(f"run directory: {runDir}")
     print(f"metadata loaded from: {runDir / 'metadata.txt'}")
 
-    phi, step, phiAlias = requireFieldAny(runDir, metadata, ["phi", "phase", "phaseField"], SELECTED_STEP)
+    phi, step, phiAlias = requireFieldAny(runDir, metadata, ["phi", "phase", "phaseField"], selectedStep)
     ux, _, uxAlias = requireFieldAny(runDir, metadata, ["ux", "velocityX"], step)
     uy, _, uyAlias = requireFieldAny(runDir, metadata, ["uy", "velocityY"], step)
     uz, _, uzAlias = requireFieldAny(runDir, metadata, ["uz", "velocityZ"], step)

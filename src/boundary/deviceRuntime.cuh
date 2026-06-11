@@ -126,9 +126,9 @@ __device__ static __forceinline__ void caseBoundaryState(
     real_t &ubz,
     real_t &phiB) noexcept
 {
-    natural_t srcX;
-    natural_t srcY;
-    natural_t srcZ;
+    natural_t srcX = x;
+    natural_t srcY = y;
+    natural_t srcZ = z;
     real_t copiedPhi = static_cast<real_t>(0);
     bool hasPhiSource = nodeType != BULK;
     if ((nodeType & XMIN_FACE) != 0u)
@@ -343,7 +343,7 @@ __device__ static __forceinline__ void applyIRBCBoundary(
             constexpr int cy = VelocitySet::cy<Q>();
             constexpr int cz = VelocitySet::cz<Q>();
 
-            if (!isMissingDirection<Q>(nodeType))
+            if (!isMissingDirectionRuntime<Q>(nodeType))
             {
                 const real_t f =
                     reconstructPressureVelocityPopulation<Q>(moments, x, y, z);

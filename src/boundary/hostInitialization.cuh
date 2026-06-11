@@ -1,6 +1,6 @@
 #pragma once
 
-#include "deviceRuntime.cuh"
+#include "helpers.cuh"
 
 template <unsigned int nodeTypeValue>
 __host__ [[nodiscard]] static inline constexpr bool isValidBoundaryTypeConst() noexcept
@@ -221,7 +221,7 @@ __host__ [[nodiscard]] static inline cudaError_t initIRBCBoundaryTables() noexce
 {
     real_t hostTable[IRBC_TABLE_SIZE] = {};
 
-    constexpr_for<0, 64>(
+    constexpr_for<0, IRBC_TABLE_NODE_TYPES>(
         [&](const auto nodeTypeConst) noexcept
         {
             fillIRBCBoundaryTableEntry<nodeTypeConst>(hostTable);

@@ -2,6 +2,57 @@
 
 #include "D3Q27.cuh"
 
+namespace math
+{
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t sqrt(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::sqrtf(x);
+        }
+        else
+        {
+            return ::sqrt(x);
+        }
+    }
+
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t tanh(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::tanhf(x);
+        }
+        else
+        {
+            return ::tanh(x);
+        }
+    }
+
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t cos(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::cosf(x);
+        }
+        else
+        {
+            return ::cos(x);
+        }
+    }
+
+    __device__ __host__ [[nodiscard]] static __forceinline__ real_t log(const real_t x) noexcept
+    {
+        if constexpr (std::is_same_v<real_t, float>)
+        {
+            return ::logf(x);
+        }
+        else
+        {
+            return ::log(x);
+        }
+    }
+}
+
 __device__ [[nodiscard]] static __forceinline__ natural_t global3(
     const natural_t x,
     const natural_t y,

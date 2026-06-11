@@ -1,12 +1,19 @@
-#!/usr/bin/env python3
+caseName = "rti"
+runId = "000"
+selectedStep = None
+outputRoot = "output"
+outputSubdir = "post_rayleigh_taylor"
+showPlots = False
+figureDpi = 600
+lowMixFraction = 0.05
+highMixFraction = 0.95
 
-from pathlib import Path
 import csv
-import sys
 
 import matplotlib
 
-matplotlib.use("Agg")
+if not showPlots:
+    matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,12 +30,6 @@ from postCommon import (
     writeDatFile,
     writeReport,
 )
-
-DEFAULT_RUN_DIR = getRunDir("rti", "000")
-OUTPUT_SUBDIR = "post_rayleigh_taylor"
-FIGURE_DPI = 600
-LOW_MIX_FRACTION = 0.05
-HIGH_MIX_FRACTION = 0.95
 
 
 def warn(warnings, message):
@@ -50,14 +51,6 @@ def metadataText(metadata, keys, defaultValue=None):
         return str(getMetadataValue(metadata, keys))
     except RuntimeError:
         return defaultValue
-
-
-def resolveRunDir():
-    if len(sys.argv) > 2:
-        raise SystemExit("usage: python3 postRayleighTaylor.py [path/to/run]")
-    if len(sys.argv) == 2:
-        return Path(sys.argv[1])
-    return DEFAULT_RUN_DIR
 
 
 def readPhi(runDir, metadata, step):
@@ -196,7 +189,9 @@ def saveEvolutionPlots(outDir, rows, xKey, xLabel):
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(outDir / "rayleigh_taylor_bubble_spike.png", dpi=FIGURE_DPI)
+    plt.savefig(outDir / "rayleigh_taylor_bubble_spike.png", dpi=figureDpi)
+    if showPlots:
+        plt.show()
     plt.close()
 
     writeDatFile(
@@ -212,7 +207,9 @@ def saveEvolutionPlots(outDir, rows, xKey, xLabel):
     plt.title("Rayleigh-Taylor mixing-layer width")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(outDir / "rayleigh_taylor_mixing_width.png", dpi=FIGURE_DPI)
+    plt.savefig(outDir / "rayleigh_taylor_mixing_width.png", dpi=figureDpi)
+    if showPlots:
+        plt.show()
     plt.close()
 
 
@@ -255,8 +252,10 @@ def saveRepresentativeSlices(outDir, runDir, metadata, steps, verticalDirection)
     fig.colorbar(image, ax=axes.ravel().tolist(), label="phi", shrink=0.8)
     fig.suptitle("Rayleigh-Taylor phase-field slices")
     fig.savefig(
-        outDir / "rayleigh_taylor_slices.png", dpi=FIGURE_DPI, bbox_inches="tight"
+        outDir / "rayleigh_taylor_slices.png", dpi=figureDpi, bbox_inches="tight"
     )
+    if showPlots:
+        plt.show()
     plt.close(fig)
 
 
@@ -305,15 +304,23 @@ def writeTextSummary(outDir, rows, metadata, warnings, xKey):
 
 
 def main():
-    runDir = resolveRunDir()
+    runDir = getRunDir(caseName, runId, outputRoot)
     metadata = readMetadata(runDir)
-    outDir = runDir / OUTPUT_SUBDIR
+    outDir = runDir / outputSubdir
     outDir.mkdir(parents=True, exist_ok=True)
     warnings = []
 
     steps = listAvailableSteps(runDir)
     if not steps:
         raise RuntimeError(f"No snapshots found in {runDir / 'binaries'}")
+    if selectedStep is not None:
+        selectedValue = int(selectedStep)
+        if selectedValue not in steps:
+            availableText = ", ".join(str(value) for value in steps)
+            raise RuntimeError(
+                f"Selected step {selectedValue} is unavailable. Available steps: {availableText}"
+            )
+        steps = [selectedValue]
 
     print(f"run directory: {runDir}")
     print(f"metadata loaded from: {runDir / 'metadata.txt'}")
@@ -338,8 +345,8 @@ def main():
             "HEAVY_PHASE_PHI missing; using current RTICase convention phi=1 for heavy phase",
         )
 
-    lowLevel = metadataFloat(metadata, "BULK_GAS_PHI_MAX", LOW_MIX_FRACTION)
-    highLevel = metadataFloat(metadata, "BULK_LIQUID_PHI_MIN", HIGH_MIX_FRACTION)
+    lowLevel = metadataFloat(metadata, "BULK_GAS_PHI_MAX", lowMixFraction)
+    highLevel = metadataFloat(metadata, "BULK_LIQUID_PHI_MIN", highMixFraction)
     initialInterface = metadataFloat(
         metadata, ["INITIAL_INTERFACE_Z", "initialInterface"], None
     )

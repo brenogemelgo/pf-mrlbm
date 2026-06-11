@@ -1,7 +1,7 @@
 #pragma once
 
-#include "boundary/deviceRuntime.cuh"
 #include "deviceFunctions.cuh"
+#include "boundary/deviceRuntime.cuh"
 
 __device__ static __forceinline__ void applyBodyForce(
     const real_t rho,
