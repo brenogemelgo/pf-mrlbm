@@ -2,7 +2,6 @@ caseName = "rti"
 runId = "000"
 selectedStep = None
 outputRoot = "output"
-outputSubdir = "post_rayleigh_taylor"
 showPlots = False
 figureDpi = 600
 lowMixFraction = 0.05
@@ -22,6 +21,7 @@ from postCommon import (
     getFloat,
     getInt,
     getMetadataValue,
+    getPostDir,
     getRunDir,
     listAvailableFields,
     listAvailableSteps,
@@ -306,8 +306,7 @@ def writeTextSummary(outDir, rows, metadata, warnings, xKey):
 def main():
     runDir = getRunDir(caseName, runId, outputRoot)
     metadata = readMetadata(runDir)
-    outDir = runDir / outputSubdir
-    outDir.mkdir(parents=True, exist_ok=True)
+    outDir = getPostDir(runDir)
     warnings = []
 
     steps = listAvailableSteps(runDir)

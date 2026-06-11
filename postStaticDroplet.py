@@ -1,8 +1,7 @@
 caseName = "static_droplet"
-runId = "000"
+runId = "caseOne"
 selectedStep = None
 outputRoot = "output"
-outputSubdir = "post_static_droplet"
 showPlots = False
 figureDpi = 600
 vectorTargetCount = 28
@@ -21,6 +20,7 @@ from postCommon import (
     getFloat,
     getGridShape,
     getMetadataValue,
+    getPostDir,
     getRunDir,
     listAvailableFields,
     readMetadata,
@@ -56,6 +56,12 @@ def relativeError(value, reference):
     if reference is None or not np.isfinite(reference) or abs(reference) <= 0.0:
         return np.nan
     return (value - reference) / reference
+
+
+def recoveredSigma(deltaP, radius):
+    if not np.isfinite(deltaP) or not np.isfinite(radius) or radius <= 0.0:
+        return np.nan
+    return 0.5 * deltaP * radius
 
 
 def readFieldAny(runDir, metadata, aliases, selectedStep=None):
@@ -102,11 +108,17 @@ def reconstructDensity(phi, runDir, metadata, step, warnings):
     rhoGas = metadataFloat(metadata, ["RHO_G", "rhoGas"])
 
     if rhoLiquid is None or rhoGas is None:
-        warn(warnings, "density field is absent and RHO_L/RHO_G are missing; density-ratio diagnostic skipped")
+        warn(
+            warnings,
+            "density field is absent and RHO_L/RHO_G are missing; density-ratio diagnostic skipped",
+        )
         return None, None
 
     if "phi" not in law.lower() and law:
-        warn(warnings, f"density field is absent and interpolation law is not recognized: {law!r}")
+        warn(
+            warnings,
+            f"density field is absent and interpolation law is not recognized: {law!r}",
+        )
         return None, None
 
     return rhoGas + (rhoLiquid - rhoGas) * phi, "metadata:linear_phi"
@@ -127,11 +139,17 @@ def reconstructViscosity(phi, runDir, metadata, step, warnings):
     muGas = metadataFloat(metadata, ["MU_G", "muGas"])
 
     if muLiquid is None or muGas is None:
-        warn(warnings, "viscosity field is absent and MU_L/MU_G are missing; viscosity-ratio diagnostic skipped")
+        warn(
+            warnings,
+            "viscosity field is absent and MU_L/MU_G are missing; viscosity-ratio diagnostic skipped",
+        )
         return None, None
 
     if "phi" not in law.lower() and law:
-        warn(warnings, f"viscosity field is absent and interpolation law is not recognized: {law!r}")
+        warn(
+            warnings,
+            f"viscosity field is absent and interpolation law is not recognized: {law!r}",
+        )
         return None, None
 
     return muGas + (muLiquid - muGas) * phi, "metadata:linear_phi"
@@ -144,19 +162,34 @@ def reconstructPressure(phi, density, runDir, metadata, step, warnings):
 
     pstar, _, alias = readFieldAny(runDir, metadata, ["pstar", "pressureStar"], step)
     if pstar is None:
-        warn(warnings, "pressure field is absent; Laplace pressure jump diagnostic skipped")
+        warn(
+            warnings,
+            "pressure field is absent; Laplace pressure jump diagnostic skipped",
+        )
         return None, None
 
-    reconstruction = metadataText(metadata, "PRESSURE_RECONSTRUCTION", "")
-    cs2 = metadataFloat(metadata, "CS2", 1.0 / 3.0)
+    cs2 = metadataFloat(metadata, ["CS2", "cs2"], 1.0 / 3.0)
+
+    if not np.isfinite(cs2):
+        raise RuntimeError("CS2 is not finite")
+
+    if abs(cs2 - 3.0) < 1.0e-6:
+        raise RuntimeError(
+            "CS2 metadata is 3.0, which looks like inverse sound speed squared AS2. "
+            "For D3Q27 lattice pressure reconstruction, CS2 must be 1/3."
+        )
+
+    if abs(cs2 - 1.0 / 3.0) > 1.0e-5:
+        warn(warnings, f"unexpected CS2={cs2}; expected approximately 1/3")
+
     if density is None:
-        warn(warnings, "pstar is available but density could not be reconstructed; pressure diagnostic skipped")
-        return None, None
-    if "pstar" not in reconstruction.lower() and reconstruction:
-        warn(warnings, f"pressure reconstruction is not recognized: {reconstruction!r}")
+        warn(
+            warnings,
+            "pstar is available but density could not be reconstructed; pressure diagnostic skipped",
+        )
         return None, None
 
-    return pstar * cs2 * density, f"{alias}:pstar*CS2*rho"
+    return pstar * cs2 * density, f"{alias}:pstar*CS2*rho, CS2={cs2}"
 
 
 def meanOrNan(values, mask):
@@ -235,7 +268,8 @@ def saveSpuriousCurrents(outDir, phi, ux, uz, interfacePhi, step):
         uzSlice[::stride, ::stride],
         color="white",
         pivot="mid",
-        scale=None,
+        scale_units="xy",
+        scale=3.0e-5,
         width=0.0026,
     )
     plt.colorbar(image, label="|u|")
@@ -267,13 +301,17 @@ def saveProfile(outDir, phi, pressure, interfacePhi):
 
     plt.figure(figsize=(6.4, 4.2))
     plt.plot(xCentered, phiProfile, label="phi")
-    plt.axhline(interfacePhi, color="k", linestyle="--", linewidth=0.8, label="interface")
+    plt.axhline(
+        interfacePhi, color="k", linestyle="--", linewidth=0.8, label="interface"
+    )
     plt.xlabel("x - x_center")
     plt.ylabel("phi")
     if pressure is not None:
         ax = plt.gca()
         ax2 = ax.twinx()
-        ax2.plot(xCentered, pressure[centerZ, centerY, :], color="tab:red", label="pressure")
+        ax2.plot(
+            xCentered, pressure[centerZ, centerY, :], color="tab:red", label="pressure"
+        )
         ax2.set_ylabel("pressure")
     plt.title("Static droplet centerline profile")
     plt.tight_layout()
@@ -303,14 +341,15 @@ def writeSummary(outDir, metrics, warnings):
 def main():
     runDir = getRunDir(caseName, runId, outputRoot)
     metadata = readMetadata(runDir)
-    outDir = runDir / outputSubdir
-    outDir.mkdir(parents=True, exist_ok=True)
+    outDir = getPostDir(runDir)
     warnings = []
 
     print(f"run directory: {runDir}")
     print(f"metadata loaded from: {runDir / 'metadata.txt'}")
 
-    phi, step, phiAlias = requireFieldAny(runDir, metadata, ["phi", "phase", "phaseField"], selectedStep)
+    phi, step, phiAlias = requireFieldAny(
+        runDir, metadata, ["phi", "phase", "phaseField"], selectedStep
+    )
     ux, _, uxAlias = requireFieldAny(runDir, metadata, ["ux", "velocityX"], step)
     uy, _, uyAlias = requireFieldAny(runDir, metadata, ["uy", "velocityY"], step)
     uz, _, uzAlias = requireFieldAny(runDir, metadata, ["uz", "velocityZ"], step)
@@ -321,12 +360,15 @@ def main():
     if dropletPhasePhi is None:
         dropletPhasePhi = metadataFloat(metadata, "LIQUID_PHASE_PHI", None)
     if dropletPhasePhi is None:
-        warn(warnings, "DROPLET_PHASE_PHI missing; using current StaticDropletCase convention phi=1 inside")
+        warn(
+            warnings,
+            "DROPLET_PHASE_PHI missing; using current StaticDropletCase convention phi=1 inside",
+        )
         dropletPhasePhi = 1.0
 
     interfacePhi = metadataFloat(metadata, "PHI_INTERFACE", 0.5)
-    liquidThreshold = metadataFloat(metadata, "BULK_LIQUID_PHI_MIN", 0.95)
-    gasThreshold = metadataFloat(metadata, "BULK_GAS_PHI_MAX", 0.05)
+    liquidThreshold = metadataFloat(metadata, "BULK_LIQUID_PHI_MIN", 0.999)
+    gasThreshold = metadataFloat(metadata, "BULK_GAS_PHI_MAX", 0.001)
     dx = metadataFloat(metadata, ["DX", "latticeSpacing"], 1.0)
     dy = metadataFloat(metadata, ["DY", "latticeSpacing"], dx)
     dz = metadataFloat(metadata, ["DZ", "latticeSpacing"], dx)
@@ -337,15 +379,40 @@ def main():
     interfaceMask = (dropletMeasure > gasThreshold) & (dropletMeasure < liquidThreshold)
 
     if not np.any(dropletMask):
-        raise RuntimeError("droplet bulk mask is empty; check phase convention and thresholds")
+        raise RuntimeError(
+            "droplet bulk mask is empty; check phase convention and thresholds"
+        )
     if not np.any(ambientMask):
-        raise RuntimeError("ambient bulk mask is empty; check phase convention and thresholds")
+        raise RuntimeError(
+            "ambient bulk mask is empty; check phase convention and thresholds"
+        )
     if not np.any(interfaceMask):
-        warn(warnings, "interface mask is empty; interfacial spurious-current means are NaN")
+        warn(
+            warnings,
+            "interface mask is empty; interfacial spurious-current means are NaN",
+        )
 
     density, densitySource = reconstructDensity(phi, runDir, metadata, step, warnings)
-    viscosity, viscositySource = reconstructViscosity(phi, runDir, metadata, step, warnings)
-    pressure, pressureSource = reconstructPressure(phi, density, runDir, metadata, step, warnings)
+    viscosity, viscositySource = reconstructViscosity(
+        phi, runDir, metadata, step, warnings
+    )
+
+    pstarRaw, _, pstarAlias = readFieldAny(
+        runDir, metadata, ["pstar", "pressureStar"], step
+    )
+
+    if pstarRaw is not None:
+        pstarIn = meanOrNan(pstarRaw, dropletMask)
+        pstarOut = meanOrNan(pstarRaw, ambientMask)
+        deltaPstar = pstarIn - pstarOut
+    else:
+        pstarIn = np.nan
+        pstarOut = np.nan
+        deltaPstar = np.nan
+
+    pressure, pressureSource = reconstructPressure(
+        phi, density, runDir, metadata, step, warnings
+    )
 
     velocityMagnitude = np.sqrt(ux * ux + uy * uy + uz * uz)
     cellVolume = dx * dy * dz
@@ -367,11 +434,28 @@ def main():
     pOut = meanOrNan(pressure, ambientMask)
     deltaP = pIn - pOut if np.isfinite(pIn) and np.isfinite(pOut) else np.nan
     sigma = metadataFloat(metadata, "SIGMA", np.nan)
-    deltaPTheory = 2.0 * sigma / radiusEff if np.isfinite(sigma) and radiusEff > 0.0 else np.nan
+    deltaPTheory = (
+        2.0 * sigma / radiusEff if np.isfinite(sigma) and radiusEff > 0.0 else np.nan
+    )
+    deltaPTheoryR0 = (
+        2.0 * sigma / targetRadius
+        if np.isfinite(sigma) and np.isfinite(targetRadius) and targetRadius > 0.0
+        else np.nan
+    )
+    sigmaRecoveredReff = recoveredSigma(deltaP, radiusEff)
+    sigmaRecoveredR0 = recoveredSigma(deltaP, targetRadius)
 
     maxVelocity = float(np.max(velocityMagnitude))
-    maxInterfaceVelocity = float(np.max(velocityMagnitude[interfaceMask])) if np.any(interfaceMask) else np.nan
-    meanInterfaceVelocity = float(np.mean(velocityMagnitude[interfaceMask])) if np.any(interfaceMask) else np.nan
+    maxInterfaceVelocity = (
+        float(np.max(velocityMagnitude[interfaceMask]))
+        if np.any(interfaceMask)
+        else np.nan
+    )
+    meanInterfaceVelocity = (
+        float(np.mean(velocityMagnitude[interfaceMask]))
+        if np.any(interfaceMask)
+        else np.nan
+    )
 
     metrics = {
         "step": step,
@@ -397,13 +481,25 @@ def main():
         "pressure_outside": pOut,
         "delta_p_recovered": deltaP,
         "delta_p_theory_2sigma_over_reff": deltaPTheory,
+        "delta_p_theory_2sigma_over_r0": deltaPTheoryR0,
         "delta_p_relative_error": relativeError(deltaP, deltaPTheory),
+        "sigma_target": sigma,
+        "sigma_recovered": sigmaRecoveredReff,
+        "sigma_recovered_reff": sigmaRecoveredReff,
+        "sigma_recovered_r0": sigmaRecoveredR0,
+        "sigma_relative_error": relativeError(sigmaRecoveredReff, sigma),
+        "sigma_relative_error_reff": relativeError(sigmaRecoveredReff, sigma),
+        "sigma_relative_error_r0": relativeError(sigmaRecoveredR0, sigma),
         "max_velocity": maxVelocity,
         "max_interface_velocity": maxInterfaceVelocity,
         "mean_interface_velocity": meanInterfaceVelocity,
         "droplet_bulk_cells": int(np.count_nonzero(dropletMask)),
         "ambient_bulk_cells": int(np.count_nonzero(ambientMask)),
         "interface_cells": int(np.count_nonzero(interfaceMask)),
+        "pstar_inside_raw": pstarIn,
+        "pstar_outside_raw": pstarOut,
+        "delta_pstar_raw": deltaPstar,
+        "cs2_used_for_pressure": metadataFloat(metadata, ["CS2", "cs2"], 1.0 / 3.0),
     }
 
     savePhiSlice(outDir, phi, interfacePhi, step)

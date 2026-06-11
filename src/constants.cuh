@@ -26,19 +26,10 @@
 struct D3Q27;
 
 using VelocitySet = D3Q27;
-using PhaseVelocitySet = D3Q27;
-using GradientVelocitySet = D3Q27;
 using natural_t = uint32_t;
 using real_t = float;
 using scalar_t = real_t;
 using mask_t = uint8_t;
-
-// Conservative phase streaming should emit exactly phi from each source cell.
-// Compute the rest phase population as a native real_t residual by default.
-// Define PHI_DIRECT_PHASE_RECONSTRUCTION to use the literal equilibrium for q=0 too.
-#if !defined(PHI_RESIDUAL_REST) && !defined(PHI_DIRECT_PHASE_RECONSTRUCTION)
-#define PHI_RESIDUAL_REST
-#endif
 
 // =================================================================================================== //
 
@@ -118,9 +109,9 @@ constexpr real_t NU_G = static_cast<real_t>(static_cast<double>(MU_G) / static_c
 constexpr real_t BETA_CHEM = static_cast<real_t>((static_cast<double>(12.0) * static_cast<double>(SIGMA)) / static_cast<double>(WIDTH));
 constexpr real_t KAPPA_CHEM = static_cast<real_t>(1.5) * SIGMA * WIDTH;
 constexpr real_t TAU_PHI = ActiveCase::TAU_PHI;
-constexpr real_t DIFF_INT = static_cast<real_t>(static_cast<double>(1.0) / static_cast<double>(3.0)) * (TAU_PHI - static_cast<real_t>(0.5));
+constexpr real_t DIFF_INT = VelocitySet::cs2() * (TAU_PHI - static_cast<real_t>(0.5));
 constexpr real_t KAPPA_INT = static_cast<real_t>((static_cast<double>(4.0) * static_cast<double>(DIFF_INT)) / static_cast<double>(WIDTH));
-constexpr real_t GAMMA = static_cast<real_t>(3.0) * KAPPA_INT;
+constexpr real_t GAMMA = VelocitySet::as2() * KAPPA_INT;
 
 constexpr real_t ATWOOD = static_cast<real_t>((static_cast<double>(RHO_L) - static_cast<double>(RHO_G)) / (static_cast<double>(RHO_L) + static_cast<double>(RHO_G)));
 

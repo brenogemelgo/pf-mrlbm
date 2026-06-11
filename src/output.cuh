@@ -834,17 +834,17 @@ __global__ void reduceLocalPhaseDefectKernel(
 #if defined(PHI_RESIDUAL_REST)
         real_t nonRest = static_cast<real_t>(0);
 
-        constexpr_for<1, PhaseVelocitySet::Q()>(
+        constexpr_for<1, VelocitySet::Q()>(
             [&](const auto Q) noexcept
             {
-                constexpr int cx = PhaseVelocitySet::cx<Q>();
-                constexpr int cy = PhaseVelocitySet::cy<Q>();
-                constexpr int cz = PhaseVelocitySet::cz<Q>();
+                constexpr int cx = VelocitySet::cx<Q>();
+                constexpr int cy = VelocitySet::cy<Q>();
+                constexpr int cz = VelocitySet::cz<Q>();
 
                 const real_t cu = phaseVelocityCu<Q>(moments, idx);
 
-                const real_t gi = PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
-                                  PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                                  VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
                                       (static_cast<real_t>(cx) * normx[idx] +
                                        static_cast<real_t>(cy) * normy[idx] +
                                        static_cast<real_t>(cz) * normz[idx]);
@@ -855,17 +855,17 @@ __global__ void reduceLocalPhaseDefectKernel(
         const real_t giRest = phi_src - nonRest;
         emission = nonRest + giRest;
 #else
-        constexpr_for<0, PhaseVelocitySet::Q()>(
+        constexpr_for<0, VelocitySet::Q()>(
             [&](const auto Q) noexcept
             {
-                constexpr int cx = PhaseVelocitySet::cx<Q>();
-                constexpr int cy = PhaseVelocitySet::cy<Q>();
-                constexpr int cz = PhaseVelocitySet::cz<Q>();
+                constexpr int cx = VelocitySet::cx<Q>();
+                constexpr int cy = VelocitySet::cy<Q>();
+                constexpr int cz = VelocitySet::cz<Q>();
 
                 const real_t cu = phaseVelocityCu<Q>(moments, idx);
 
-                const real_t gi = PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
-                                  PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
+                const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                                  VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
                                       (static_cast<real_t>(cx) * normx[idx] +
                                        static_cast<real_t>(cy) * normy[idx] +
                                        static_cast<real_t>(cz) * normz[idx]);
@@ -1010,8 +1010,8 @@ static inline void printVelocitySetDiagnosticsFor(const char *label)
 static inline void printVelocitySetDiagnostics()
 {
     printVelocitySetDiagnosticsFor<VelocitySet>("hydro_velocity_set");
-    printVelocitySetDiagnosticsFor<PhaseVelocitySet>("phase_velocity_set");
-    printVelocitySetDiagnosticsFor<GradientVelocitySet>("gradient_velocity_set");
+    printVelocitySetDiagnosticsFor<VelocitySet>("phase_velocity_set");
+    printVelocitySetDiagnosticsFor<VelocitySet>("gradient_velocity_set");
 
     std::cout << "PHI_DIAG layout"
               << " midx_0_phi=" << midx(0, PHI)
@@ -1038,8 +1038,8 @@ static inline void runPhaseConservationDiagnostics(
 
     const natural_t requestedSteps = static_cast<natural_t>(PHI_DIAG_STEPS);
     const natural_t diagEvery = static_cast<natural_t>(PHI_DIAG_EVERY) > 0
-                                     ? static_cast<natural_t>(PHI_DIAG_EVERY)
-                                     : static_cast<natural_t>(1);
+                                    ? static_cast<natural_t>(PHI_DIAG_EVERY)
+                                    : static_cast<natural_t>(1);
     const natural_t finalStep = std::min<natural_t>(NSTEPS, startStep + requestedSteps);
 
     double sumBA = 0.0;
@@ -1135,7 +1135,6 @@ static inline void runPhaseConservationDiagnostics(
     freePhaseDiagScratch(scratch);
 }
 #endif
-
 
 static inline void writeOutput(
     const real_t *deviceMoments,

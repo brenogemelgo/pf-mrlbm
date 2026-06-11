@@ -54,7 +54,7 @@ __device__ [[nodiscard]] static __forceinline__ real_t phaseVelocityCu(
     const real_t *__restrict__ moments,
     const natural_t idx) noexcept
 {
-    return velocityCu<PhaseVelocitySet, Q>(moments, idx);
+    return velocityCu<VelocitySet, Q>(moments, idx);
 }
 
 template <typename Set, natural_t Q>
@@ -95,16 +95,16 @@ __device__ static __forceinline__ void accumulateGradientDirection(
     real_t &grady,
     real_t &gradz) noexcept
 {
-    constexpr int cx = GradientVelocitySet::cx<Q>();
-    constexpr int cy = GradientVelocitySet::cy<Q>();
-    constexpr int cz = GradientVelocitySet::cz<Q>();
+    constexpr int cx = VelocitySet::cx<Q>();
+    constexpr int cy = VelocitySet::cy<Q>();
+    constexpr int cz = VelocitySet::cz<Q>();
 
     if constexpr (cx != 0 || cy != 0 || cz != 0)
     {
         const natural_t src = caseNeighborIndex(static_cast<int>(x) + cx,
                                                 static_cast<int>(y) + cy,
                                                 static_cast<int>(z) + cz);
-        const real_t weightedPhi = GradientVelocitySet::w<Q>() * loadMoment(moments, src, PHI);
+        const real_t weightedPhi = VelocitySet::w<Q>() * loadMoment(moments, src, PHI);
 
         if constexpr (cx != 0)
         {
@@ -208,12 +208,11 @@ __device__ static __forceinline__ void accumulatePhaseStreamDirection(
     const natural_t x,
     const natural_t y,
     const natural_t z,
-    real_t &phiAccum,
-    real_t &phiCompensation) noexcept
+    real_t &phi) noexcept
 {
-    constexpr int cx = PhaseVelocitySet::cx<Q>();
-    constexpr int cy = PhaseVelocitySet::cy<Q>();
-    constexpr int cz = PhaseVelocitySet::cz<Q>();
+    constexpr int cx = VelocitySet::cx<Q>();
+    constexpr int cy = VelocitySet::cy<Q>();
+    constexpr int cz = VelocitySet::cz<Q>();
 
     const natural_t src = caseNeighborIndex(static_cast<int>(x) - cx,
                                             static_cast<int>(y) - cy,
@@ -221,40 +220,12 @@ __device__ static __forceinline__ void accumulatePhaseStreamDirection(
 
     const real_t phi_src = loadMoment(moments, src, PHI);
     const real_t cu = phaseVelocityCu<Q>(moments, src);
-    const real_t projection = normalProjection<PhaseVelocitySet, Q>(normx, normy, normz, src);
+    const real_t projection = normalProjection<VelocitySet, Q>(normx, normy, normz, src);
 
-    const real_t gi =
-        PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
-        PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) * projection;
+    const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
+                      VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) * projection;
 
-    const real_t yPhi = gi - phiCompensation;
-    const real_t tPhi = phiAccum + yPhi;
-    phiCompensation = (tPhi - phiAccum) - yPhi;
-    phiAccum = tPhi;
-}
-
-template <natural_t Q>
-__device__ static __forceinline__ void accumulatePhaseRestResidualDirection(
-    const real_t *__restrict__ moments,
-    const real_t *__restrict__ normx,
-    const real_t *__restrict__ normy,
-    const real_t *__restrict__ normz,
-    const natural_t idx,
-    const real_t phi_src,
-    real_t &nonRest) noexcept
-{
-    constexpr int cx = PhaseVelocitySet::cx<Q>();
-    constexpr int cy = PhaseVelocitySet::cy<Q>();
-    constexpr int cz = PhaseVelocitySet::cz<Q>();
-
-    static_assert(cx != 0 || cy != 0 || cz != 0);
-
-    const real_t cu = phaseVelocityCu<Q>(moments, idx);
-    const real_t projection = normalProjection<PhaseVelocitySet, Q>(normx, normy, normz, idx);
-
-    nonRest +=
-        PhaseVelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
-        PhaseVelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) * projection;
+    phi += gi;
 }
 
 template <natural_t Q>
@@ -269,9 +240,9 @@ __device__ static __forceinline__ void accumulatePhaseGradientLapDirection(
     real_t &dphiz,
     real_t &lapAcc) noexcept
 {
-    constexpr int cx = GradientVelocitySet::cx<Q>();
-    constexpr int cy = GradientVelocitySet::cy<Q>();
-    constexpr int cz = GradientVelocitySet::cz<Q>();
+    constexpr int cx = VelocitySet::cx<Q>();
+    constexpr int cy = VelocitySet::cy<Q>();
+    constexpr int cz = VelocitySet::cz<Q>();
 
     if constexpr (cx != 0 || cy != 0 || cz != 0)
     {
@@ -279,7 +250,7 @@ __device__ static __forceinline__ void accumulatePhaseGradientLapDirection(
                                                 static_cast<int>(y) + cy,
                                                 static_cast<int>(z) + cz);
         const real_t phi_q = loadMoment(dbuffer, src, PHI);
-        const real_t weightedPhi = GradientVelocitySet::w<Q>() * phi_q;
+        const real_t weightedPhi = VelocitySet::w<Q>() * phi_q;
 
         if constexpr (cx != 0)
         {
@@ -294,7 +265,7 @@ __device__ static __forceinline__ void accumulatePhaseGradientLapDirection(
             dphiz += static_cast<real_t>(cz) * weightedPhi;
         }
 
-        lapAcc += GradientVelocitySet::w<Q>() * (phi_q - phi);
+        lapAcc += VelocitySet::w<Q>() * (phi_q - phi);
     }
 }
 
@@ -319,15 +290,15 @@ __global__ void computeNormals(
     real_t grady = static_cast<real_t>(0);
     real_t gradz = static_cast<real_t>(0);
 
-    constexpr_for<0, GradientVelocitySet::Q()>(
+    constexpr_for<0, VelocitySet::Q()>(
         [&](const auto Q) noexcept
         {
             accumulateGradientDirection<Q>(moments, x, y, z, gradx, grady, gradz);
         });
 
-    gradx *= GradientVelocitySet::as2();
-    grady *= GradientVelocitySet::as2();
-    gradz *= GradientVelocitySet::as2();
+    gradx *= VelocitySet::as2();
+    grady *= VelocitySet::as2();
+    gradz *= VelocitySet::as2();
 
     const real_t gradNorm =
         math::sqrt(gradx * gradx + grady * grady + gradz * gradz) +
@@ -378,44 +349,12 @@ __global__ void stream(
     }
     else
     {
-        real_t phiAccum = static_cast<real_t>(0);
-        real_t phiCompensation = static_cast<real_t>(0);
-
         constexpr_for<0, VelocitySet::Q()>(
             [&](const auto Q) noexcept
             {
                 accumulateHydroStreamDirection<Q>(moments, x, y, z, pstar, ux, uy, uz, mxx, myy, mzz, mxy, mxz, myz);
+                accumulatePhaseStreamDirection<Q>(moments, normx, normy, normz, x, y, z, phi);
             });
-
-        constexpr_for<0, PhaseVelocitySet::Q()>(
-            [&](const auto Q) noexcept
-            {
-#if defined(PHI_RESIDUAL_REST)
-                if constexpr (Q == 0)
-                {
-                    const real_t phi_src = loadMoment(moments, idx, PHI);
-
-                    real_t nonRest = static_cast<real_t>(0);
-
-                    constexpr_for<1, PhaseVelocitySet::Q()>(
-                        [&](const auto QR) noexcept
-                        {
-                            accumulatePhaseRestResidualDirection<QR>(moments, normx, normy, normz, idx, phi_src, nonRest);
-                        });
-
-                    const real_t giRest = phi_src - nonRest;
-                    const real_t yPhi = giRest - phiCompensation;
-                    const real_t tPhi = phiAccum + yPhi;
-                    phiCompensation = (tPhi - phiAccum) - yPhi;
-                    phiAccum = tPhi;
-                    return;
-                }
-#endif
-
-                accumulatePhaseStreamDirection<Q>(moments, normx, normy, normz, x, y, z, phiAccum, phiCompensation);
-            });
-
-        phi = static_cast<real_t>(phiAccum);
     }
 
     dbuffer[midx(idx, PSTAR)] = pstar;
@@ -472,6 +411,7 @@ __global__ void collide(
         moments[midx(idx, MXZ)] = mxz;
         moments[midx(idx, MYZ)] = myz;
         moments[midx(idx, PHI)] = phi;
+
         return;
     }
 
@@ -496,17 +436,17 @@ __global__ void collide(
     real_t dphiz = static_cast<real_t>(0);
     real_t lapAcc = static_cast<real_t>(0);
 
-    constexpr_for<0, GradientVelocitySet::Q()>(
+    constexpr_for<0, VelocitySet::Q()>(
         [&](const auto Q) noexcept
         {
             accumulatePhaseGradientLapDirection<Q>(dbuffer, x, y, z, phi, dphix, dphiy, dphiz, lapAcc);
         });
 
-    dphix *= GradientVelocitySet::as2();
-    dphiy *= GradientVelocitySet::as2();
-    dphiz *= GradientVelocitySet::as2();
+    dphix *= VelocitySet::as2();
+    dphiy *= VelocitySet::as2();
+    dphiz *= VelocitySet::as2();
 
-    const real_t lapPhi = static_cast<real_t>(2) * lapAcc * GradientVelocitySet::as2();
+    const real_t lapPhi = static_cast<real_t>(2) * lapAcc * VelocitySet::as2();
     const real_t muPhi = static_cast<real_t>(4) * BETA_CHEM * (phi - static_cast<real_t>(1)) * phi * (phi - static_cast<real_t>(0.5)) - KAPPA_CHEM * lapPhi;
 
     forceX += muPhi * dphix;
