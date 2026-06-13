@@ -34,6 +34,22 @@ using mask_t = uint8_t;
 constexpr real_t CS2 = static_cast<real_t>(static_cast<double>(1) / static_cast<double>(3));
 constexpr real_t AS2 = static_cast<real_t>(3);
 
+#if !defined(SURFACE_FORCE_CSF) && !defined(SURFACE_FORCE_CPF)
+#define SURFACE_FORCE_CSF
+#endif
+
+#if defined(SURFACE_FORCE_CSF) && defined(SURFACE_FORCE_CPF)
+#error "Select only one of SURFACE_FORCE_CSF or SURFACE_FORCE_CPF"
+#endif
+
+#if defined(SURFACE_FORCE_CSF)
+constexpr const char *SURFACE_FORCE_MODEL = "CSF";
+#elif defined(SURFACE_FORCE_CPF)
+constexpr const char *SURFACE_FORCE_MODEL = "CPF";
+#else
+#error "Select SURFACE_FORCE_CSF or SURFACE_FORCE_CPF"
+#endif
+
 // =================================================================================================== //
 
 #if defined(CASE_STATIC_DROPLET)

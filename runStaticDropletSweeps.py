@@ -1,5 +1,7 @@
 outputRoot = "output"
-summaryRunId = "sweep_summary"
+defaultSummaryRunId = None
+defaultRunIdPrefix = None
+defaultSurfaceForce = "csf"
 defaultNsteps = 37000
 defaultStamp = 37000
 arch = "sm_86"
@@ -50,7 +52,7 @@ def asFloat(values, key, defaultValue=np.nan):
         return defaultValue
 
 
-def compileCase(case, nsteps, stamp, repo):
+def compileCase(case, nsteps, stamp, repo, surfaceForce):
     command = [
         "nvcc",
         "-std=c++20",
@@ -65,6 +67,7 @@ def compileCase(case, nsteps, stamp, repo):
         "-Xptxas",
         "-v",
         "-DCASE_STATIC_DROPLET",
+        f"-DSURFACE_FORCE_{surfaceForce.upper()}",
         f"-DSTATIC_DROPLET_SIGMA={case['sigma']:.17g}",
         f"-DSTATIC_DROPLET_R_INIT={case['radius']:.17g}",
         f"-DSTATIC_DROPLET_WIDTH={case['width']:.17g}",
@@ -176,7 +179,7 @@ def plotWidth(path, rows):
     plt.close()
 
 
-def buildCases(includeWidth):
+def buildCases(includeWidth, requestedSweep, runIdPrefix):
     cases = [
         {"runId": "sigma005_R24_W5", "sweep": "sigma", "sigma": 0.005, "radius": 24.0, "width": 5.0},
         {"runId": "sigma010_R24_W5", "sweep": "sigma,radius,width", "sigma": 0.01, "radius": 24.0, "width": 5.0},
@@ -192,42 +195,61 @@ def buildCases(includeWidth):
                 {"runId": "sigma010_R24_W8", "sweep": "width", "sigma": 0.01, "radius": 24.0, "width": 8.0},
             ]
         )
+    if requestedSweep != "all":
+        cases = [case for case in cases if requestedSweep in case["sweep"].split(",")]
+    if runIdPrefix:
+        cases = [{**case, "runId": runIdPrefix + case["runId"]} for case in cases]
     return cases
 
 
-def fitRows(rows):
-    sigmaRows = [row for row in rows if row["R_INIT"] == 24.0 and row["WIDTH"] == 5.0]
-    radiusRows = [row for row in rows if row["SIGMA"] == 0.01 and row["WIDTH"] == 5.0]
-    widthRows = [row for row in rows if row["SIGMA"] == 0.01 and row["R_INIT"] == 24.0]
+def fitRows(rows, requestedSweep, includeWidth):
+    sigmaRows = []
+    radiusRows = []
+    widthRows = []
+    fits = []
 
-    sigmaA, sigmaB, sigmaR2 = fitWithIntercept(
-        [row["SIGMA"] for row in sigmaRows], [row["delta_p"] for row in sigmaRows]
-    )
-    radiusA, radiusB, radiusR2 = fitWithIntercept(
-        [1.0 / row["R_INIT"] for row in radiusRows], [row["delta_p"] for row in radiusRows]
-    )
+    if requestedSweep in ("all", "sigma"):
+        sigmaRows = [row for row in rows if row["R_INIT"] == 24.0 and row["WIDTH"] == 5.0]
+        if len(sigmaRows) >= 2:
+            sigmaA, sigmaB, sigmaR2 = fitWithIntercept(
+                [row["SIGMA"] for row in sigmaRows], [row["delta_p"] for row in sigmaRows]
+            )
+            fits.append(
+                {
+                    "sweep": "sigma",
+                    "slope": sigmaA,
+                    "intercept": sigmaB,
+                    "theory_slope": 2.0 / 24.0,
+                    "slope_ratio": sigmaA / (2.0 / 24.0),
+                    "r_squared": sigmaR2,
+                }
+            )
+
+    if requestedSweep in ("all", "radius"):
+        radiusRows = [row for row in rows if row["SIGMA"] == 0.01 and row["WIDTH"] == 5.0]
+        if len(radiusRows) >= 2:
+            radiusA, radiusB, radiusR2 = fitWithIntercept(
+                [1.0 / row["R_INIT"] for row in radiusRows], [row["delta_p"] for row in radiusRows]
+            )
+            fits.append(
+                {
+                    "sweep": "radius",
+                    "slope": radiusA,
+                    "intercept": radiusB,
+                    "theory_slope": 0.02,
+                    "slope_ratio": radiusA / 0.02,
+                    "r_squared": radiusR2,
+                }
+            )
+
+    if includeWidth and requestedSweep in ("all", "width"):
+        widthRows = [row for row in rows if row["SIGMA"] == 0.01 and row["R_INIT"] == 24.0]
+
     return {
         "sigmaRows": sigmaRows,
         "radiusRows": radiusRows,
         "widthRows": widthRows,
-        "fits": [
-            {
-                "sweep": "sigma",
-                "slope": sigmaA,
-                "intercept": sigmaB,
-                "theory_slope": 2.0 / 24.0,
-                "slope_ratio": sigmaA / (2.0 / 24.0),
-                "r_squared": sigmaR2,
-            },
-            {
-                "sweep": "radius",
-                "slope": radiusA,
-                "intercept": radiusB,
-                "theory_slope": 0.02,
-                "slope_ratio": radiusA / 0.02,
-                "r_squared": radiusR2,
-            },
-        ],
+        "fits": fits,
     }
 
 
@@ -236,11 +258,23 @@ def main():
     parser.add_argument("--nsteps", type=int, default=defaultNsteps)
     parser.add_argument("--stamp", type=int, default=defaultStamp)
     parser.add_argument("--include-width", action="store_true", default=includeWidthSweepByDefault)
+    parser.add_argument("--sweeps", choices=("all", "sigma", "radius", "width"), default="all")
+    parser.add_argument("--surface-force", choices=("csf", "cpf"), default=defaultSurfaceForce)
+    parser.add_argument("--summary-run-id", default=defaultSummaryRunId)
+    parser.add_argument("--run-id-prefix", default=defaultRunIdPrefix)
     parser.add_argument("--reuse", action="store_true")
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parent
-    cases = buildCases(args.include_width)
+    includeWidth = args.include_width or args.sweeps == "width"
+    runIdPrefix = args.run_id_prefix
+    if runIdPrefix is None:
+        runIdPrefix = f"{args.surface_force}_"
+    summaryRunId = args.summary_run_id
+    if summaryRunId is None:
+        summaryRunId = f"sweep_summary_{args.surface_force}"
+
+    cases = buildCases(includeWidth, args.sweeps, runIdPrefix)
     allRows = []
 
     for case in cases:
@@ -250,36 +284,41 @@ def main():
         else:
             if runDir.exists():
                 shutil.rmtree(runDir)
-            compileCase(case, args.nsteps, args.stamp, repo)
+            compileCase(case, args.nsteps, args.stamp, repo, args.surface_force)
             runCase(case, repo)
             postCase(case, repo)
         allRows.append(collectCase(case, repo))
 
     outDir = repo / outputRoot / caseName / summaryRunId / "post"
     outDir.mkdir(parents=True, exist_ok=True)
-    fitData = fitRows(allRows)
+    fitData = fitRows(allRows, args.sweeps, includeWidth)
 
-    writeRows(outDir / "static_droplet_sigma_sweep_summary.csv", fitData["sigmaRows"])
-    writeRows(outDir / "static_droplet_radius_sweep_summary.csv", fitData["radiusRows"])
-    if args.include_width:
+    if fitData["sigmaRows"]:
+        writeRows(outDir / "static_droplet_sigma_sweep_summary.csv", fitData["sigmaRows"])
+    if fitData["radiusRows"]:
+        writeRows(outDir / "static_droplet_radius_sweep_summary.csv", fitData["radiusRows"])
+    if fitData["widthRows"]:
         writeRows(outDir / "static_droplet_width_sweep_summary.csv", fitData["widthRows"])
-    writeRows(outDir / "static_droplet_sweep_fit_summary.csv", fitData["fits"])
+    if fitData["fits"]:
+        writeRows(outDir / "static_droplet_sweep_fit_summary.csv", fitData["fits"])
 
-    plotFit(
-        outDir / "delta_p_vs_sigma.png",
-        [row["SIGMA"] for row in fitData["sigmaRows"]],
-        [row["delta_p"] for row in fitData["sigmaRows"]],
-        "SIGMA",
-        "delta_p",
-    )
-    plotFit(
-        outDir / "delta_p_vs_inv_radius.png",
-        [1.0 / row["R_INIT"] for row in fitData["radiusRows"]],
-        [row["delta_p"] for row in fitData["radiusRows"]],
-        "1 / R_INIT",
-        "delta_p",
-    )
-    if args.include_width:
+    if len(fitData["sigmaRows"]) >= 2:
+        plotFit(
+            outDir / "delta_p_vs_sigma.png",
+            [row["SIGMA"] for row in fitData["sigmaRows"]],
+            [row["delta_p"] for row in fitData["sigmaRows"]],
+            "SIGMA",
+            "delta_p",
+        )
+    if len(fitData["radiusRows"]) >= 2:
+        plotFit(
+            outDir / "delta_p_vs_inv_radius.png",
+            [1.0 / row["R_INIT"] for row in fitData["radiusRows"]],
+            [row["delta_p"] for row in fitData["radiusRows"]],
+            "1 / R_INIT",
+            "delta_p",
+        )
+    if len(fitData["widthRows"]) >= 2:
         plotWidth(outDir / "sigma_error_vs_width.png", fitData["widthRows"])
 
     print(f"summary outputs written to: {outDir}", flush=True)

@@ -229,7 +229,43 @@ __device__ static __forceinline__ void accumulatePhaseStreamDirection(
 }
 
 template <natural_t Q>
-__device__ static __forceinline__ void accumulatePhaseGradientLapDirection(
+__device__ static __forceinline__ void accumulatePhaseGradientDirection(
+    const real_t *__restrict__ dbuffer,
+    const natural_t x,
+    const natural_t y,
+    const natural_t z,
+    real_t &dphix,
+    real_t &dphiy,
+    real_t &dphiz) noexcept
+{
+    constexpr int cx = VelocitySet::cx<Q>();
+    constexpr int cy = VelocitySet::cy<Q>();
+    constexpr int cz = VelocitySet::cz<Q>();
+
+    if constexpr (cx != 0 || cy != 0 || cz != 0)
+    {
+        const natural_t src = caseNeighborIndex(static_cast<int>(x) + cx,
+                                                static_cast<int>(y) + cy,
+                                                static_cast<int>(z) + cz);
+        const real_t weightedPhi = VelocitySet::w<Q>() * loadMoment(dbuffer, src, PHI);
+
+        if constexpr (cx != 0)
+        {
+            dphix += static_cast<real_t>(cx) * weightedPhi;
+        }
+        if constexpr (cy != 0)
+        {
+            dphiy += static_cast<real_t>(cy) * weightedPhi;
+        }
+        if constexpr (cz != 0)
+        {
+            dphiz += static_cast<real_t>(cz) * weightedPhi;
+        }
+    }
+}
+
+template <natural_t Q>
+__device__ static __forceinline__ void accumulatePhaseGradientLaplacianDirection(
     const real_t *__restrict__ dbuffer,
     const natural_t x,
     const natural_t y,
@@ -267,6 +303,151 @@ __device__ static __forceinline__ void accumulatePhaseGradientLapDirection(
 
         lapAcc += VelocitySet::w<Q>() * (phi_q - phi);
     }
+}
+
+__device__ static __forceinline__ void computePhaseGradient(
+    const real_t *__restrict__ dbuffer,
+    const natural_t x,
+    const natural_t y,
+    const natural_t z,
+    real_t &dphix,
+    real_t &dphiy,
+    real_t &dphiz) noexcept
+{
+    dphix = static_cast<real_t>(0);
+    dphiy = static_cast<real_t>(0);
+    dphiz = static_cast<real_t>(0);
+
+    constexpr_for<0, VelocitySet::Q()>(
+        [&](const auto Q) noexcept
+        {
+            accumulatePhaseGradientDirection<Q>(dbuffer, x, y, z, dphix, dphiy, dphiz);
+        });
+
+    dphix *= VelocitySet::as2();
+    dphiy *= VelocitySet::as2();
+    dphiz *= VelocitySet::as2();
+}
+
+__device__ static __forceinline__ real_t computePhaseGradientLaplacian(
+    const real_t *__restrict__ dbuffer,
+    const natural_t x,
+    const natural_t y,
+    const natural_t z,
+    const real_t phi,
+    real_t &dphix,
+    real_t &dphiy,
+    real_t &dphiz) noexcept
+{
+    dphix = static_cast<real_t>(0);
+    dphiy = static_cast<real_t>(0);
+    dphiz = static_cast<real_t>(0);
+    real_t lapAcc = static_cast<real_t>(0);
+
+    constexpr_for<0, VelocitySet::Q()>(
+        [&](const auto Q) noexcept
+        {
+            accumulatePhaseGradientLaplacianDirection<Q>(
+                dbuffer, x, y, z, phi, dphix, dphiy, dphiz, lapAcc);
+        });
+
+    dphix *= VelocitySet::as2();
+    dphiy *= VelocitySet::as2();
+    dphiz *= VelocitySet::as2();
+
+    return static_cast<real_t>(2) * lapAcc * VelocitySet::as2();
+}
+
+__device__ static __forceinline__ void computePhaseNormalIndicator(
+    const real_t *__restrict__ dbuffer,
+    const natural_t x,
+    const natural_t y,
+    const natural_t z,
+    real_t &normx,
+    real_t &normy,
+    real_t &normz,
+    real_t &indicator,
+    real_t &dphix,
+    real_t &dphiy,
+    real_t &dphiz) noexcept
+{
+    computePhaseGradient(dbuffer, x, y, z, dphix, dphiy, dphiz);
+
+    indicator = math::sqrt(dphix * dphix + dphiy * dphiy + dphiz * dphiz);
+    const real_t invIndicator =
+        static_cast<real_t>(1) / (indicator + static_cast<real_t>(1.0e-9));
+
+    normx = dphix * invIndicator;
+    normy = dphiy * invIndicator;
+    normz = dphiz * invIndicator;
+}
+
+__device__ static __forceinline__ void computePhaseNormalIndicator(
+    const real_t *__restrict__ dbuffer,
+    const natural_t x,
+    const natural_t y,
+    const natural_t z,
+    real_t &normx,
+    real_t &normy,
+    real_t &normz,
+    real_t &indicator) noexcept
+{
+    real_t dphix;
+    real_t dphiy;
+    real_t dphiz;
+    computePhaseNormalIndicator(
+        dbuffer, x, y, z, normx, normy, normz, indicator, dphix, dphiy, dphiz);
+}
+
+template <natural_t Q>
+__device__ static __forceinline__ void accumulateCurvatureDirection(
+    const real_t *__restrict__ dbuffer,
+    const natural_t x,
+    const natural_t y,
+    const natural_t z,
+    real_t &curvatureAcc) noexcept
+{
+    constexpr int cx = VelocitySet::cx<Q>();
+    constexpr int cy = VelocitySet::cy<Q>();
+    constexpr int cz = VelocitySet::cz<Q>();
+
+    if constexpr (cx != 0 || cy != 0 || cz != 0)
+    {
+        const natural_t src = caseNeighborIndex(static_cast<int>(x) + cx,
+                                                static_cast<int>(y) + cy,
+                                                static_cast<int>(z) + cz);
+        const natural_t sx = src % NX;
+        const natural_t sy = (src / NX) % NY;
+        const natural_t sz = src / STRIDE;
+
+        real_t normx;
+        real_t normy;
+        real_t normz;
+        real_t indicator;
+        computePhaseNormalIndicator(dbuffer, sx, sy, sz, normx, normy, normz, indicator);
+
+        curvatureAcc += VelocitySet::w<Q>() *
+                        (static_cast<real_t>(cx) * normx +
+                         static_cast<real_t>(cy) * normy +
+                         static_cast<real_t>(cz) * normz);
+    }
+}
+
+__device__ static __forceinline__ real_t computePhaseCurvature(
+    const real_t *__restrict__ dbuffer,
+    const natural_t x,
+    const natural_t y,
+    const natural_t z) noexcept
+{
+    real_t curvatureAcc = static_cast<real_t>(0);
+
+    constexpr_for<0, VelocitySet::Q()>(
+        [&](const auto Q) noexcept
+        {
+            accumulateCurvatureDirection<Q>(dbuffer, x, y, z, curvatureAcc);
+        });
+
+    return VelocitySet::as2() * curvatureAcc;
 }
 
 __global__ void computeNormals(
@@ -434,24 +615,35 @@ __global__ void collide(
     real_t dphix = static_cast<real_t>(0);
     real_t dphiy = static_cast<real_t>(0);
     real_t dphiz = static_cast<real_t>(0);
-    real_t lapAcc = static_cast<real_t>(0);
 
-    constexpr_for<0, VelocitySet::Q()>(
-        [&](const auto Q) noexcept
-        {
-            accumulatePhaseGradientLapDirection<Q>(dbuffer, x, y, z, phi, dphix, dphiy, dphiz, lapAcc);
-        });
+#if defined(SURFACE_FORCE_CSF)
+    real_t normx = static_cast<real_t>(0);
+    real_t normy = static_cast<real_t>(0);
+    real_t normz = static_cast<real_t>(0);
+    real_t indicator = static_cast<real_t>(0);
 
-    dphix *= VelocitySet::as2();
-    dphiy *= VelocitySet::as2();
-    dphiz *= VelocitySet::as2();
+    computePhaseNormalIndicator(
+        dbuffer, x, y, z, normx, normy, normz, indicator, dphix, dphiy, dphiz);
 
-    const real_t lapPhi = static_cast<real_t>(2) * lapAcc * VelocitySet::as2();
-    const real_t muPhi = static_cast<real_t>(4) * BETA_CHEM * (phi - static_cast<real_t>(1)) * phi * (phi - static_cast<real_t>(0.5)) - KAPPA_CHEM * lapPhi;
+    const real_t curvature = computePhaseCurvature(dbuffer, x, y, z);
+    const real_t surfaceForce = -SIGMA * curvature * indicator;
+
+    forceX += surfaceForce * normx;
+    forceY += surfaceForce * normy;
+    forceZ += surfaceForce * normz;
+#elif defined(SURFACE_FORCE_CPF)
+    const real_t lapPhi = computePhaseGradientLaplacian(dbuffer, x, y, z, phi, dphix, dphiy, dphiz);
+    const real_t muPhi =
+        static_cast<real_t>(4) * BETA_CHEM *
+            (phi - static_cast<real_t>(1)) * phi * (phi - static_cast<real_t>(0.5)) -
+        KAPPA_CHEM * lapPhi;
 
     forceX += muPhi * dphix;
     forceY += muPhi * dphiy;
     forceZ += muPhi * dphiz;
+#else
+#error "Select SURFACE_FORCE_CSF or SURFACE_FORCE_CPF"
+#endif
 
     const real_t drhoDphi = RHO_L - RHO_G;
     const real_t drhox = drhoDphi * dphix;

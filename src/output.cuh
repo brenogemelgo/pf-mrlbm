@@ -199,6 +199,7 @@ static inline void writeMetadata()
     out << "VISCOSITY_INTERPOLATION = MU_G + (MU_L - MU_G) * phi" << '\n';
     out << "PRESSURE_FIELD = pstar" << '\n';
     out << "PRESSURE_RECONSTRUCTION = pressure = pstar * CS2 * rho" << '\n';
+    out << "SURFACE_FORCE_MODEL = " << SURFACE_FORCE_MODEL << '\n';
     out << '\n';
 
 #if defined(CASE_STATIC_DROPLET)
