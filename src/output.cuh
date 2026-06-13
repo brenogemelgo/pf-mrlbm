@@ -154,7 +154,8 @@ static inline void writeMetadata()
     out << "STAMP = " << STAMP << '\n';
     out << "NUM_MOMENTS = " << NUM_MOMENTS << '\n';
     out << "velocityScaleI = " << static_cast<double>(VelocitySet::scaleI()) << '\n';
-    out << "CS2 = " << static_cast<double>(VelocitySet::cs2()) << '\n';
+    out << "CS2 = " << static_cast<double>(CS2) << '\n';
+    out << "AS2 = " << static_cast<double>(AS2) << '\n';
     out << "DX = 1" << '\n';
     out << "DY = 1" << '\n';
     out << "DZ = 1" << '\n';
@@ -180,6 +181,8 @@ static inline void writeMetadata()
     out << "BETA_CHEM = " << static_cast<double>(BETA_CHEM) << '\n';
     out << "KAPPA_CHEM = " << static_cast<double>(KAPPA_CHEM) << '\n';
     out << "TAU_PHI = " << static_cast<double>(TAU_PHI) << '\n';
+    out << "DIFF_INT = " << static_cast<double>(DIFF_INT) << '\n';
+    out << "KAPPA_INT = " << static_cast<double>(KAPPA_INT) << '\n';
     out << "GAMMA = " << static_cast<double>(GAMMA) << '\n';
     out << "U_CHAR = " << static_cast<double>(U_CHAR) << '\n';
     out << "R_INIT = " << static_cast<double>(R_INIT) << '\n';
@@ -473,7 +476,7 @@ static inline void writeCaseDiagnostics(
         outputCheckCuda(cudaMemcpy(pstar.data(), deviceMoments + CELLS * PSTAR, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy diagnostics pstar");
 
         constexpr double pi = 3.141592653589793238462643383279502884;
-        constexpr double cs2 = 1.0 / 3.0;
+        constexpr double cs2 = static_cast<double>(CS2);
         constexpr double laplaceFactor = 2.0; // sphere: Delta p = 2 sigma / R
 
         double volumePhi = 0.0;

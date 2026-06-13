@@ -39,6 +39,14 @@ def summaryFloat(summary, key, defaultValue=np.nan):
         return defaultValue
 
 
+def firstSummaryFloat(summary, keys, defaultValue=np.nan):
+    for key in keys:
+        value = summaryFloat(summary, key, np.nan)
+        if np.isfinite(value):
+            return value
+    return defaultValue
+
+
 def recoveredSigma(deltaP, radius):
     if not np.isfinite(deltaP) or not np.isfinite(radius) or radius <= 0.0:
         return np.nan
@@ -53,27 +61,33 @@ def loadRunRow(runId):
 
     sigmaAnalytical = getFloat(metadata, "SIGMA")
     deltaP = summaryFloat(summary, "delta_p_recovered")
-    radiusEff = summaryFloat(summary, "radius_effective")
-    radiusTarget = summaryFloat(summary, "radius_target", getFloat(metadata, "R_INIT"))
+    radiusEff = firstSummaryFloat(summary, ["radius_effective_lu", "radius_effective"])
+    radiusTarget = firstSummaryFloat(
+        summary, ["radius_target_lu", "radius_target"], getFloat(metadata, "R_INIT")
+    )
 
-    sigmaReff = summaryFloat(summary, "sigma_recovered_reff")
+    sigmaReff = firstSummaryFloat(
+        summary, ["sigma_recovered_reff_lu", "sigma_recovered_reff"]
+    )
     if not np.isfinite(sigmaReff):
         sigmaReff = recoveredSigma(deltaP, radiusEff)
 
-    sigmaR0 = summaryFloat(summary, "sigma_recovered_r0")
+    sigmaR0 = firstSummaryFloat(
+        summary, ["sigma_recovered_r0_lu", "sigma_recovered_r0"]
+    )
     if not np.isfinite(sigmaR0):
         sigmaR0 = recoveredSigma(deltaP, radiusTarget)
 
     return {
         "runId": runId,
         "sigmaAnalytical": sigmaAnalytical,
-        "sigmaRecoveredReff": sigmaReff,
-        "sigmaRecoveredR0": sigmaR0,
-        "relativeErrorReff": (sigmaReff - sigmaAnalytical) / sigmaAnalytical,
-        "relativeErrorR0": (sigmaR0 - sigmaAnalytical) / sigmaAnalytical,
+        "sigmaRecoveredReffLu": sigmaReff,
+        "sigmaRecoveredR0Lu": sigmaR0,
+        "relativeErrorReffLu": (sigmaReff - sigmaAnalytical) / sigmaAnalytical,
+        "relativeErrorR0Lu": (sigmaR0 - sigmaAnalytical) / sigmaAnalytical,
         "deltaPRecovered": deltaP,
-        "radiusEffective": radiusEff,
-        "radiusTarget": radiusTarget,
+        "radiusEffectiveLu": radiusEff,
+        "radiusTargetLu": radiusTarget,
     }
 
 
@@ -81,13 +95,13 @@ def writeRowsCsv(path, rows):
     columns = [
         "runId",
         "sigmaAnalytical",
-        "sigmaRecoveredReff",
-        "sigmaRecoveredR0",
-        "relativeErrorReff",
-        "relativeErrorR0",
+        "sigmaRecoveredReffLu",
+        "sigmaRecoveredR0Lu",
+        "relativeErrorReffLu",
+        "relativeErrorR0Lu",
         "deltaPRecovered",
-        "radiusEffective",
-        "radiusTarget",
+        "radiusEffectiveLu",
+        "radiusTargetLu",
     ]
     with path.open("w", encoding="utf-8", newline="") as outputFile:
         writer = csv.DictWriter(outputFile, fieldnames=columns)
@@ -97,12 +111,12 @@ def writeRowsCsv(path, rows):
 
 def saveSigmaPlot(outDir, rows):
     sigmaAnalytical = np.array([row["sigmaAnalytical"] for row in rows], dtype=np.float64)
-    sigmaReff = np.array([row["sigmaRecoveredReff"] for row in rows], dtype=np.float64)
-    sigmaR0 = np.array([row["sigmaRecoveredR0"] for row in rows], dtype=np.float64)
+    sigmaReff = np.array([row["sigmaRecoveredReffLu"] for row in rows], dtype=np.float64)
+    sigmaR0 = np.array([row["sigmaRecoveredR0Lu"] for row in rows], dtype=np.float64)
 
     writeDatFile(
         outDir / "static_droplet_sigma_sweep.dat",
-        ["sigmaAnalytical", "sigmaRecoveredReff", "sigmaRecoveredR0"],
+        ["sigmaAnalytical", "sigmaRecoveredReffLu", "sigmaRecoveredR0Lu"],
         [sigmaAnalytical, sigmaReff, sigmaR0],
     )
 
@@ -132,7 +146,7 @@ def saveSigmaPlot(outDir, rows):
     for row in rows:
         plt.annotate(
             row["runId"],
-            (row["sigmaAnalytical"], row["sigmaRecoveredReff"]),
+            (row["sigmaAnalytical"], row["sigmaRecoveredReffLu"]),
             textcoords="offset points",
             xytext=(5, 5),
             fontsize=8,
@@ -152,8 +166,8 @@ def saveSigmaPlot(outDir, rows):
 
 def saveErrorPlot(outDir, rows):
     sigmaAnalytical = np.array([row["sigmaAnalytical"] for row in rows], dtype=np.float64)
-    errorReff = np.array([row["relativeErrorReff"] for row in rows], dtype=np.float64)
-    errorR0 = np.array([row["relativeErrorR0"] for row in rows], dtype=np.float64)
+    errorReff = np.array([row["relativeErrorReffLu"] for row in rows], dtype=np.float64)
+    errorR0 = np.array([row["relativeErrorR0Lu"] for row in rows], dtype=np.float64)
 
     plt.figure(figsize=(6.2, 4.2))
     plt.axhline(0.0, color="k", linestyle="--", linewidth=1.0)
@@ -185,4 +199,5 @@ def main():
     print(f"outputs written to: {outDir}")
 
 
-main()
+if __name__ == "__main__":
+    main()

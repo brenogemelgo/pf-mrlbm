@@ -6,6 +6,7 @@ showPlots = False
 figureDpi = 600
 vectorTargetCount = 28
 
+import argparse
 import csv
 
 import matplotlib
@@ -29,6 +30,34 @@ from postCommon import (
     writeDatFile,
     writeReport,
 )
+
+
+def applyCommandLineArgs():
+    global caseName
+    global runId
+    global selectedStep
+    global outputRoot
+    global showPlots
+    global figureDpi
+    global vectorTargetCount
+
+    parser = argparse.ArgumentParser(description="Post-process a static droplet run")
+    parser.add_argument("--caseName", default=caseName)
+    parser.add_argument("--runId", default=runId)
+    parser.add_argument("--selectedStep", type=int, default=selectedStep)
+    parser.add_argument("--outputRoot", default=outputRoot)
+    parser.add_argument("--showPlots", action="store_true", default=showPlots)
+    parser.add_argument("--figureDpi", type=int, default=figureDpi)
+    parser.add_argument("--vectorTargetCount", type=int, default=vectorTargetCount)
+    args = parser.parse_args()
+
+    caseName = args.caseName
+    runId = args.runId
+    selectedStep = args.selectedStep
+    outputRoot = args.outputRoot
+    showPlots = args.showPlots
+    figureDpi = args.figureDpi
+    vectorTargetCount = args.vectorTargetCount
 
 
 def warn(warnings, message):
@@ -62,6 +91,67 @@ def recoveredSigma(deltaP, radius):
     if not np.isfinite(deltaP) or not np.isfinite(radius) or radius <= 0.0:
         return np.nan
     return 0.5 * deltaP * radius
+
+
+def sphereRadiusFromVolume(volume):
+    if not np.isfinite(volume) or volume <= 0.0:
+        return np.nan
+    return (3.0 * volume / (4.0 * np.pi)) ** (1.0 / 3.0)
+
+
+def domainCenter(shape):
+    nz, ny, nx = shape
+    return (
+        0.5 * (nx - 1),
+        0.5 * (ny - 1),
+        0.5 * (nz - 1),
+    )
+
+
+def radialDistance(shape, center):
+    nz, ny, nx = shape
+    centerX, centerY, centerZ = center
+    x = np.arange(nx, dtype=np.float64)[None, None, :] - centerX
+    y = np.arange(ny, dtype=np.float64)[None, :, None] - centerY
+    z = np.arange(nz, dtype=np.float64)[:, None, None] - centerZ
+    return np.sqrt(x * x + y * y + z * z)
+
+
+def estimatePhiIsoRadius(phi, radius, interfacePhi, targetRadius=np.nan):
+    binWidth = 0.25
+    binIndex = np.floor(radius.ravel() / binWidth).astype(np.int64)
+    weights = np.bincount(binIndex, weights=phi.ravel())
+    counts = np.bincount(binIndex)
+    valid = counts > 0
+    if not np.any(valid):
+        return np.nan
+
+    radiusBins = (np.arange(counts.size, dtype=np.float64) + 0.5) * binWidth
+    phiMean = np.full(counts.size, np.nan, dtype=np.float64)
+    phiMean[valid] = weights[valid] / counts[valid]
+    diff = phiMean - interfacePhi
+    crossing = np.flatnonzero(np.isfinite(diff[:-1]) & np.isfinite(diff[1:]) & (diff[:-1] >= 0.0) & (diff[1:] <= 0.0))
+    if crossing.size == 0:
+        return np.nan
+
+    if np.isfinite(targetRadius):
+        idx = crossing[np.argmin(np.abs(radiusBins[crossing] - targetRadius))]
+    else:
+        idx = crossing[0]
+
+    r0 = radiusBins[idx]
+    r1 = radiusBins[idx + 1]
+    p0 = phiMean[idx]
+    p1 = phiMean[idx + 1]
+    if not np.isfinite(p0) or not np.isfinite(p1) or abs(p1 - p0) <= 0.0:
+        return 0.5 * (r0 + r1)
+    return r0 + (interfacePhi - p0) * (r1 - r0) / (p1 - p0)
+
+
+def initialStaticDropletProfile(radius, targetRadius, width):
+    if not np.isfinite(targetRadius) or not np.isfinite(width) or width <= 0.0:
+        return None
+    return 0.5 * (1.0 - np.tanh((radius - targetRadius) / (0.5 * width)))
 
 
 def readFieldAny(runDir, metadata, aliases, selectedStep=None):
@@ -155,19 +245,7 @@ def reconstructViscosity(phi, runDir, metadata, step, warnings):
     return muGas + (muLiquid - muGas) * phi, "metadata:linear_phi"
 
 
-def reconstructPressure(phi, density, runDir, metadata, step, warnings):
-    pressure, _, alias = readFieldAny(runDir, metadata, ["p", "pressure"], step)
-    if pressure is not None:
-        return pressure, f"field:{alias}"
-
-    pstar, _, alias = readFieldAny(runDir, metadata, ["pstar", "pressureStar"], step)
-    if pstar is None:
-        warn(
-            warnings,
-            "pressure field is absent; Laplace pressure jump diagnostic skipped",
-        )
-        return None, None
-
+def validatedPressureCs2(metadata, warnings):
     cs2 = metadataFloat(metadata, ["CS2", "cs2"], 1.0 / 3.0)
 
     if not np.isfinite(cs2):
@@ -181,6 +259,22 @@ def reconstructPressure(phi, density, runDir, metadata, step, warnings):
 
     if abs(cs2 - 1.0 / 3.0) > 1.0e-5:
         warn(warnings, f"unexpected CS2={cs2}; expected approximately 1/3")
+
+    return cs2
+
+
+def reconstructPressure(phi, density, runDir, metadata, step, warnings, cs2):
+    pressure, _, alias = readFieldAny(runDir, metadata, ["p", "pressure"], step)
+    if pressure is not None:
+        return pressure, f"field:{alias}"
+
+    pstar, _, alias = readFieldAny(runDir, metadata, ["pstar", "pressureStar"], step)
+    if pstar is None:
+        warn(
+            warnings,
+            "pressure field is absent; Laplace pressure jump diagnostic skipped",
+        )
+        return None, None
 
     if density is None:
         warn(
@@ -196,6 +290,89 @@ def meanOrNan(values, mask):
     if values is None or not np.any(mask):
         return np.nan
     return float(np.mean(values[mask]))
+
+
+def boolMetadata(metadata, key, defaultValue=False):
+    value = metadataText(metadata, key, None)
+    if value is None:
+        return defaultValue
+    return value.strip().lower() in {"true", "1", "yes", "on"}
+
+
+def boundaryCounts(metadata):
+    nx, ny, nz = getGridShape(metadata)
+    periodicX = boolMetadata(metadata, "PERIODIC_X", False)
+    periodicY = boolMetadata(metadata, "PERIODIC_Y", False)
+    periodicZ = boolMetadata(metadata, "PERIODIC_Z", False)
+
+    xBoundary = np.zeros(nx, dtype=bool)
+    yBoundary = np.zeros(ny, dtype=bool)
+    zBoundary = np.zeros(nz, dtype=bool)
+    if not periodicX:
+        xBoundary[0] = True
+        xBoundary[-1] = True
+    if not periodicY:
+        yBoundary[0] = True
+        yBoundary[-1] = True
+    if not periodicZ:
+        zBoundary[0] = True
+        zBoundary[-1] = True
+
+    nonBulk = np.count_nonzero(
+        xBoundary[None, None, :]
+        | yBoundary[None, :, None]
+        | zBoundary[:, None, None]
+    )
+    total = nx * ny * nz
+    return total - int(nonBulk), int(nonBulk)
+
+
+def pressureMaskRow(name, insideMask, outsideMask, pstar, pressure, radiusR0, radiusReff):
+    pstarInside = meanOrNan(pstar, insideMask)
+    pstarOutside = meanOrNan(pstar, outsideMask)
+    pressureInside = meanOrNan(pressure, insideMask)
+    pressureOutside = meanOrNan(pressure, outsideMask)
+    deltaP = (
+        pressureInside - pressureOutside
+        if np.isfinite(pressureInside) and np.isfinite(pressureOutside)
+        else np.nan
+    )
+    return {
+        "mask": name,
+        "inside_cells": int(np.count_nonzero(insideMask)),
+        "outside_cells": int(np.count_nonzero(outsideMask)),
+        "pstar_inside_raw": pstarInside,
+        "pstar_outside_raw": pstarOutside,
+        "delta_pstar_raw": pstarInside - pstarOutside
+        if np.isfinite(pstarInside) and np.isfinite(pstarOutside)
+        else np.nan,
+        "pressure_inside": pressureInside,
+        "pressure_outside": pressureOutside,
+        "delta_p": deltaP,
+        "sigma_recovered_r0": recoveredSigma(deltaP, radiusR0),
+        "sigma_recovered_reff": recoveredSigma(deltaP, radiusReff),
+    }
+
+
+def writeMaskDiagnostics(outDir, rows):
+    path = outDir / "static_droplet_pressure_masks.csv"
+    columns = [
+        "mask",
+        "inside_cells",
+        "outside_cells",
+        "pstar_inside_raw",
+        "pstar_outside_raw",
+        "delta_pstar_raw",
+        "pressure_inside",
+        "pressure_outside",
+        "delta_p",
+        "sigma_recovered_r0",
+        "sigma_recovered_reff",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as outputFile:
+        writer = csv.DictWriter(outputFile, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def savePhiSlice(outDir, phi, interfacePhi, step):
@@ -369,11 +546,25 @@ def main():
     interfacePhi = metadataFloat(metadata, "PHI_INTERFACE", 0.5)
     liquidThreshold = metadataFloat(metadata, "BULK_LIQUID_PHI_MIN", 0.999)
     gasThreshold = metadataFloat(metadata, "BULK_GAS_PHI_MAX", 0.001)
+    targetRadius = metadataFloat(metadata, ["R_INIT", "RADIUS"], np.nan)
+    width = metadataFloat(metadata, "WIDTH", np.nan)
     dx = metadataFloat(metadata, ["DX", "latticeSpacing"], 1.0)
     dy = metadataFloat(metadata, ["DY", "latticeSpacing"], dx)
     dz = metadataFloat(metadata, ["DZ", "latticeSpacing"], dx)
+    if dx <= 0.0 or dy <= 0.0 or dz <= 0.0:
+        raise RuntimeError(
+            f"DX, DY, DZ must be positive; got DX={dx}, DY={dy}, DZ={dz}"
+        )
+    if any(abs(value - 1.0) > 1.0e-12 for value in [dx, dy, dz]):
+        warn(
+            warnings,
+            "DX/DY/DZ are not all 1.0; Laplace pressure and sigma diagnostics use lattice-unit radii, "
+            "while physical volume/radius are reported separately.",
+        )
 
     dropletMeasure = phaseMeasure(phi, dropletPhasePhi)
+    centerLu = domainCenter(phi.shape)
+    radiusLu = radialDistance(phi.shape, centerLu)
     dropletMask = dropletMeasure > liquidThreshold
     ambientMask = dropletMeasure < gasThreshold
     interfaceMask = (dropletMeasure > gasThreshold) & (dropletMeasure < liquidThreshold)
@@ -392,10 +583,32 @@ def main():
             "interface mask is empty; interfacial spurious-current means are NaN",
         )
 
+    phiInitial, initialStep, _ = readFieldAny(
+        runDir, metadata, ["phi", "phase", "phaseField"], 0
+    )
+    initialDropletVolumeLu = np.nan
+    radiusPhi05Initial = np.nan
+    initialProfileMaxAbsError = np.nan
+    initialProfileRmsError = np.nan
+    if phiInitial is not None:
+        initialDropletMeasure = phaseMeasure(phiInitial, dropletPhasePhi)
+        initialDropletVolumeLu = float(np.sum(initialDropletMeasure))
+        radiusPhi05Initial = estimatePhiIsoRadius(
+            initialDropletMeasure, radiusLu, interfacePhi, targetRadius
+        )
+        initialProfile = initialStaticDropletProfile(radiusLu, targetRadius, width)
+        if initialProfile is not None:
+            initialProfileError = phiInitial - initialProfile
+            initialProfileMaxAbsError = float(np.max(np.abs(initialProfileError)))
+            initialProfileRmsError = float(
+                np.sqrt(np.mean(initialProfileError * initialProfileError))
+            )
+
     density, densitySource = reconstructDensity(phi, runDir, metadata, step, warnings)
     viscosity, viscositySource = reconstructViscosity(
         phi, runDir, metadata, step, warnings
     )
+    cs2ForPressure = validatedPressureCs2(metadata, warnings)
 
     pstarRaw, _, pstarAlias = readFieldAny(
         runDir, metadata, ["pstar", "pressureStar"], step
@@ -411,14 +624,29 @@ def main():
         deltaPstar = np.nan
 
     pressure, pressureSource = reconstructPressure(
-        phi, density, runDir, metadata, step, warnings
+        phi, density, runDir, metadata, step, warnings, cs2ForPressure
     )
 
     velocityMagnitude = np.sqrt(ux * ux + uy * uy + uz * uz)
-    cellVolume = dx * dy * dz
-    dropletVolume = float(np.sum(dropletMeasure) * cellVolume)
-    radiusEff = (3.0 * dropletVolume / (4.0 * np.pi)) ** (1.0 / 3.0)
-    targetRadius = metadataFloat(metadata, ["R_INIT", "RADIUS"], np.nan)
+    cellVolumePhysical = dx * dy * dz
+    dropletVolumeLu = float(np.sum(dropletMeasure))
+    dropletVolumePhysical = dropletVolumeLu * cellVolumePhysical
+    radiusEffLu = sphereRadiusFromVolume(dropletVolumeLu)
+    radiusEffPhysical = sphereRadiusFromVolume(dropletVolumePhysical)
+    radiusPhi05 = estimatePhiIsoRadius(dropletMeasure, radiusLu, interfacePhi, targetRadius)
+    radiusTargetLu = targetRadius
+    radiusTargetPhysical = (
+        targetRadius * (cellVolumePhysical ** (1.0 / 3.0))
+        if np.isfinite(targetRadius)
+        else np.nan
+    )
+    massChangePhi = (
+        dropletVolumeLu - initialDropletVolumeLu
+        if np.isfinite(initialDropletVolumeLu)
+        else np.nan
+    )
+    massRelativeChangePhi = relativeError(dropletVolumeLu, initialDropletVolumeLu)
+    boundaryBulkNodes, boundaryNonBulkNodes = boundaryCounts(metadata)
 
     rhoIn = meanOrNan(density, dropletMask)
     rhoOut = meanOrNan(density, ambientMask)
@@ -434,16 +662,104 @@ def main():
     pOut = meanOrNan(pressure, ambientMask)
     deltaP = pIn - pOut if np.isfinite(pIn) and np.isfinite(pOut) else np.nan
     sigma = metadataFloat(metadata, "SIGMA", np.nan)
-    deltaPTheory = (
-        2.0 * sigma / radiusEff if np.isfinite(sigma) and radiusEff > 0.0 else np.nan
-    )
-    deltaPTheoryR0 = (
-        2.0 * sigma / targetRadius
-        if np.isfinite(sigma) and np.isfinite(targetRadius) and targetRadius > 0.0
+    deltaPTheoryReffLu = (
+        2.0 * sigma / radiusEffLu
+        if np.isfinite(sigma) and np.isfinite(radiusEffLu) and radiusEffLu > 0.0
         else np.nan
     )
-    sigmaRecoveredReff = recoveredSigma(deltaP, radiusEff)
-    sigmaRecoveredR0 = recoveredSigma(deltaP, targetRadius)
+    deltaPTheoryR0 = (
+        2.0 * sigma / radiusTargetLu
+        if np.isfinite(sigma) and np.isfinite(radiusTargetLu) and radiusTargetLu > 0.0
+        else np.nan
+    )
+    sigmaRecoveredReffLu = recoveredSigma(deltaP, radiusEffLu)
+    sigmaRecoveredR0Lu = recoveredSigma(deltaP, radiusTargetLu)
+
+    pressureMaskRows = []
+    if pressure is not None and pstarRaw is not None:
+        pressureMaskRows = [
+            pressureMaskRow(
+                "phase_phi_gt_0.999_lt_0.001",
+                dropletMeasure > 0.999,
+                dropletMeasure < 0.001,
+                pstarRaw,
+                pressure,
+                radiusTargetLu,
+                radiusEffLu,
+            ),
+            pressureMaskRow(
+                "phase_phi_gt_0.99_lt_0.01",
+                dropletMeasure > 0.99,
+                dropletMeasure < 0.01,
+                pstarRaw,
+                pressure,
+                radiusTargetLu,
+                radiusEffLu,
+            ),
+        ]
+        if np.isfinite(radiusTargetLu) and np.isfinite(width):
+            pressureMaskRows.extend(
+                [
+                    pressureMaskRow(
+                        "radial_r_lt_R_minus_2W_gt_R_plus_2W",
+                        radiusLu < radiusTargetLu - 2.0 * width,
+                        radiusLu > radiusTargetLu + 2.0 * width,
+                        pstarRaw,
+                        pressure,
+                        radiusTargetLu,
+                        radiusEffLu,
+                    ),
+                    pressureMaskRow(
+                        "radial_r_lt_R_minus_3W_gt_R_plus_3W",
+                        radiusLu < radiusTargetLu - 3.0 * width,
+                        radiusLu > radiusTargetLu + 3.0 * width,
+                        pstarRaw,
+                        pressure,
+                        radiusTargetLu,
+                        radiusEffLu,
+                    ),
+                ]
+            )
+
+    cs2ForChemistry = cs2ForPressure
+    as2ForChemistry = metadataFloat(metadata, ["AS2", "as2"], np.nan)
+    as2Source = "metadata"
+    if not np.isfinite(as2ForChemistry):
+        as2ForChemistry = (
+            1.0 / cs2ForChemistry
+            if np.isfinite(cs2ForChemistry) and abs(cs2ForChemistry) > 0.0
+            else np.nan
+        )
+        as2Source = "inferred:1/CS2"
+    betaChem = metadataFloat(metadata, "BETA_CHEM", np.nan)
+    kappaChem = metadataFloat(metadata, "KAPPA_CHEM", np.nan)
+    tauPhi = metadataFloat(metadata, "TAU_PHI", np.nan)
+    gamma = metadataFloat(metadata, "GAMMA", np.nan)
+    betaChemExpected = (
+        12.0 * sigma / width
+        if np.isfinite(sigma) and np.isfinite(width) and width > 0.0
+        else np.nan
+    )
+    kappaChemExpected = (
+        1.5 * sigma * width
+        if np.isfinite(sigma) and np.isfinite(width)
+        else np.nan
+    )
+    diffIntExpected = (
+        cs2ForChemistry * (tauPhi - 0.5)
+        if np.isfinite(cs2ForChemistry) and np.isfinite(tauPhi)
+        else np.nan
+    )
+    kappaIntExpected = (
+        4.0 * diffIntExpected / width
+        if np.isfinite(diffIntExpected) and np.isfinite(width) and width > 0.0
+        else np.nan
+    )
+    gammaExpected = (
+        as2ForChemistry * kappaIntExpected
+        if np.isfinite(as2ForChemistry) and np.isfinite(kappaIntExpected)
+        else np.nan
+    )
 
     maxVelocity = float(np.max(velocityMagnitude))
     maxInterfaceVelocity = (
@@ -460,6 +776,14 @@ def main():
     metrics = {
         "step": step,
         "grid": " x ".join(str(v) for v in getGridShape(metadata)),
+        "dx": dx,
+        "dy": dy,
+        "dz": dz,
+        "center_x_lu": centerLu[0],
+        "center_y_lu": centerLu[1],
+        "center_z_lu": centerLu[2],
+        "boundary_bulk_nodes": boundaryBulkNodes,
+        "boundary_nonbulk_nodes": boundaryNonBulkNodes,
         "density_source": densitySource or "skipped",
         "rho_inside": rhoIn,
         "rho_outside": rhoOut,
@@ -472,43 +796,116 @@ def main():
         "mu_ratio_recovered": muRatio,
         "mu_ratio_target": targetMuRatio,
         "mu_ratio_relative_error": relativeError(muRatio, targetMuRatio),
-        "droplet_volume": dropletVolume,
-        "radius_effective": radiusEff,
-        "radius_target": targetRadius,
-        "radius_relative_error": relativeError(radiusEff, targetRadius),
+        "droplet_volume": dropletVolumeLu,
+        "droplet_volume_lu": dropletVolumeLu,
+        "droplet_volume_physical": dropletVolumePhysical,
+        "initial_step_for_mass": initialStep,
+        "initial_droplet_volume_lu": initialDropletVolumeLu,
+        "mass_change_phi": massChangePhi,
+        "mass_relative_change_phi": massRelativeChangePhi,
+        "radius_effective": radiusEffLu,
+        "radius_effective_lu": radiusEffLu,
+        "radius_effective_physical": radiusEffPhysical,
+        "radius_phi05": radiusPhi05,
+        "radius_phi05_lu": radiusPhi05,
+        "radius_phi05_initial_lu": radiusPhi05Initial,
+        "radius_target": radiusTargetLu,
+        "radius_target_lu": radiusTargetLu,
+        "radius_target_physical": radiusTargetPhysical,
+        "radius_relative_error": relativeError(radiusEffLu, radiusTargetLu),
+        "radius_relative_error_lu": relativeError(radiusEffLu, radiusTargetLu),
+        "radius_phi05_relative_error_lu": relativeError(radiusPhi05, radiusTargetLu),
+        "initial_profile_max_abs_error": initialProfileMaxAbsError,
+        "initial_profile_rms_error": initialProfileRmsError,
         "pressure_source": pressureSource or "skipped",
+        "pstar_source": pstarAlias or "skipped",
+        "pstar_inside_raw": pstarIn,
+        "pstar_outside_raw": pstarOut,
+        "delta_pstar_raw": deltaPstar,
+        "cs2_used_for_pressure": cs2ForPressure,
         "pressure_inside": pIn,
         "pressure_outside": pOut,
         "delta_p_recovered": deltaP,
-        "delta_p_theory_2sigma_over_reff": deltaPTheory,
+        "delta_p_theory_2sigma_over_reff": deltaPTheoryReffLu,
+        "delta_p_theory_2sigma_over_reff_lu": deltaPTheoryReffLu,
         "delta_p_theory_2sigma_over_r0": deltaPTheoryR0,
-        "delta_p_relative_error": relativeError(deltaP, deltaPTheory),
+        "delta_p_relative_error": relativeError(deltaP, deltaPTheoryReffLu),
+        "delta_p_relative_error_reff_lu": relativeError(deltaP, deltaPTheoryReffLu),
+        "delta_p_relative_error_r0_lu": relativeError(deltaP, deltaPTheoryR0),
         "sigma_target": sigma,
-        "sigma_recovered": sigmaRecoveredReff,
-        "sigma_recovered_reff": sigmaRecoveredReff,
-        "sigma_recovered_r0": sigmaRecoveredR0,
-        "sigma_relative_error": relativeError(sigmaRecoveredReff, sigma),
-        "sigma_relative_error_reff": relativeError(sigmaRecoveredReff, sigma),
-        "sigma_relative_error_r0": relativeError(sigmaRecoveredR0, sigma),
+        "sigma_recovered": sigmaRecoveredReffLu,
+        "sigma_recovered_reff": sigmaRecoveredReffLu,
+        "sigma_recovered_r0": sigmaRecoveredR0Lu,
+        "sigma_recovered_reff_lu": sigmaRecoveredReffLu,
+        "sigma_recovered_r0_lu": sigmaRecoveredR0Lu,
+        "sigma_relative_error": relativeError(sigmaRecoveredReffLu, sigma),
+        "sigma_relative_error_reff": relativeError(sigmaRecoveredReffLu, sigma),
+        "sigma_relative_error_r0": relativeError(sigmaRecoveredR0Lu, sigma),
+        "sigma_relative_error_reff_lu": relativeError(sigmaRecoveredReffLu, sigma),
+        "sigma_relative_error_r0_lu": relativeError(sigmaRecoveredR0Lu, sigma),
+        "cs2": cs2ForPressure,
+        "as2": as2ForChemistry,
+        "as2_source": as2Source,
+        "beta_chem": betaChem,
+        "beta_chem_expected": betaChemExpected,
+        "beta_chem_relative_error": relativeError(betaChem, betaChemExpected),
+        "kappa_chem": kappaChem,
+        "kappa_chem_expected": kappaChemExpected,
+        "kappa_chem_relative_error": relativeError(kappaChem, kappaChemExpected),
+        "diff_int_expected": diffIntExpected,
+        "kappa_int_expected": kappaIntExpected,
+        "gamma": gamma,
+        "gamma_expected": gammaExpected,
+        "gamma_relative_error": relativeError(gamma, gammaExpected),
         "max_velocity": maxVelocity,
         "max_interface_velocity": maxInterfaceVelocity,
         "mean_interface_velocity": meanInterfaceVelocity,
         "droplet_bulk_cells": int(np.count_nonzero(dropletMask)),
         "ambient_bulk_cells": int(np.count_nonzero(ambientMask)),
         "interface_cells": int(np.count_nonzero(interfaceMask)),
-        "pstar_inside_raw": pstarIn,
-        "pstar_outside_raw": pstarOut,
-        "delta_pstar_raw": deltaPstar,
-        "cs2_used_for_pressure": metadataFloat(metadata, ["CS2", "cs2"], 1.0 / 3.0),
     }
+
+    for row in pressureMaskRows:
+        prefix = "mask_" + row["mask"]
+        metrics[f"{prefix}_inside_cells"] = row["inside_cells"]
+        metrics[f"{prefix}_outside_cells"] = row["outside_cells"]
+        metrics[f"{prefix}_delta_p"] = row["delta_p"]
+        metrics[f"{prefix}_sigma_recovered_r0"] = row["sigma_recovered_r0"]
+        metrics[f"{prefix}_sigma_recovered_reff"] = row["sigma_recovered_reff"]
+
+    if boundaryNonBulkNodes != 0 and metadataText(metadata, "caseName", "") == "STATIC_DROPLET":
+        warn(
+            warnings,
+            f"static droplet case has {boundaryNonBulkNodes} non-bulk boundary nodes",
+        )
+
+    print(f"pressure_source: {metrics['pressure_source']}")
+    print(f"cs2_used_for_pressure: {metrics['cs2_used_for_pressure']}")
+    print(f"delta_pstar_raw: {deltaPstar}")
+    print(f"delta_p_recovered: {deltaP}")
+    print(f"dx,dy,dz: {dx}, {dy}, {dz}")
+    print(f"radius_target: {radiusTargetLu}")
+    print(f"radius_effective_lu: {radiusEffLu}")
+    print(f"radius_phi05_lu: {radiusPhi05}")
+    print(f"radius_effective_physical: {radiusEffPhysical}")
+    if pressureMaskRows:
+        print("pressure mask sensitivity:")
+        for row in pressureMaskRows:
+            print(
+                f"  {row['mask']}: delta_p={row['delta_p']}, "
+                f"sigma_r0={row['sigma_recovered_r0']}, "
+                f"sigma_reff={row['sigma_recovered_reff']}"
+            )
 
     savePhiSlice(outDir, phi, interfacePhi, step)
     saveSpuriousCurrents(outDir, phi, ux, uz, interfacePhi, step)
     saveProfile(outDir, phi, pressure, interfacePhi)
+    writeMaskDiagnostics(outDir, pressureMaskRows)
     writeSummary(outDir, metrics, warnings)
 
     print(f"outputs written to: {outDir}")
 
 
 if __name__ == "__main__":
+    applyCommandLineArgs()
     main()

@@ -31,6 +31,9 @@ using real_t = float;
 using scalar_t = real_t;
 using mask_t = uint8_t;
 
+constexpr real_t CS2 = static_cast<real_t>(static_cast<double>(1) / static_cast<double>(3));
+constexpr real_t AS2 = static_cast<real_t>(3);
+
 // =================================================================================================== //
 
 #if defined(CASE_STATIC_DROPLET)
@@ -109,9 +112,9 @@ constexpr real_t NU_G = static_cast<real_t>(static_cast<double>(MU_G) / static_c
 constexpr real_t BETA_CHEM = static_cast<real_t>((static_cast<double>(12.0) * static_cast<double>(SIGMA)) / static_cast<double>(WIDTH));
 constexpr real_t KAPPA_CHEM = static_cast<real_t>(1.5) * SIGMA * WIDTH;
 constexpr real_t TAU_PHI = ActiveCase::TAU_PHI;
-constexpr real_t DIFF_INT = VelocitySet::cs2() * (TAU_PHI - static_cast<real_t>(0.5));
+constexpr real_t DIFF_INT = CS2 * (TAU_PHI - static_cast<real_t>(0.5));
 constexpr real_t KAPPA_INT = static_cast<real_t>((static_cast<double>(4.0) * static_cast<double>(DIFF_INT)) / static_cast<double>(WIDTH));
-constexpr real_t GAMMA = VelocitySet::as2() * KAPPA_INT;
+constexpr real_t GAMMA = AS2 * KAPPA_INT;
 
 constexpr real_t ATWOOD = static_cast<real_t>((static_cast<double>(RHO_L) - static_cast<double>(RHO_G)) / (static_cast<double>(RHO_L) + static_cast<double>(RHO_G)));
 

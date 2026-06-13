@@ -88,12 +88,12 @@ struct D3Q27
 
     __device__ __host__ [[nodiscard]] static __forceinline__ consteval real_t cs2() noexcept
     {
-        return static_cast<real_t>(static_cast<double>(1) / static_cast<double>(3));
+        return CS2;
     }
 
     __device__ __host__ [[nodiscard]] static __forceinline__ consteval real_t as2() noexcept
     {
-        return static_cast<real_t>(3.0);
+        return AS2;
     }
 
     __device__ __host__ [[nodiscard]] static __forceinline__ consteval real_t as4() noexcept
