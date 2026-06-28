@@ -98,16 +98,6 @@ int main(int argc, char **argv)
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&moments), bytes));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&dbuffer), bytes));
 
-    real_t *normx = nullptr;
-    real_t *normy = nullptr;
-    real_t *normz = nullptr;
-
-    constexpr size_t normalBytes = static_cast<size_t>(CELLS) * sizeof(real_t);
-
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&normx), normalBytes));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&normy), normalBytes));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&normz), normalBytes));
-
     real_t *momentsAlloc = moments;
     real_t *dbufferAlloc = dbuffer;
 
@@ -129,13 +119,10 @@ int main(int argc, char **argv)
     }
 
 #ifdef PHI_CONSERVATION_DIAG
-    runPhaseConservationDiagnostics(moments, dbuffer, normx, normy, normz, grid, block, startStep);
+    runPhaseConservationDiagnostics(moments, dbuffer, grid, block, startStep);
 
     CUDA_CHECK(cudaFree(momentsAlloc));
     CUDA_CHECK(cudaFree(dbufferAlloc));
-    CUDA_CHECK(cudaFree(normx));
-    CUDA_CHECK(cudaFree(normy));
-    CUDA_CHECK(cudaFree(normz));
 
     return 0;
 #endif
@@ -155,7 +142,6 @@ int main(int argc, char **argv)
     }
     std::cout << "output: " << getSimulationOutputDirectory() << std::endl;
     std::cout << "binaries: " << getBinaryOutputDirectory() << std::endl;
-    std::cout << "vtis: " << getVtiOutputDirectory() << std::endl;
     printCaseSummary();
     const auto start = std::chrono::high_resolution_clock::now();
 #ifndef BENCHMARK
@@ -165,8 +151,7 @@ int main(int argc, char **argv)
 
     for (natural_t t = startStep; t < NSTEPS; ++t)
     {
-        computeNormals<<<grid, block>>>(moments, normx, normy, normz);
-        stream<<<grid, block>>>(moments, normx, normy, normz, dbuffer, t);
+        stream<<<grid, block>>>(moments, dbuffer, t);
         collide<<<grid, block>>>(moments, dbuffer);
 
 #ifndef BENCHMARK
@@ -205,9 +190,6 @@ int main(int argc, char **argv)
 
     CUDA_CHECK(cudaFree(momentsAlloc));
     CUDA_CHECK(cudaFree(dbufferAlloc));
-    CUDA_CHECK(cudaFree(normx));
-    CUDA_CHECK(cudaFree(normy));
-    CUDA_CHECK(cudaFree(normz));
 
     return 0;
 }

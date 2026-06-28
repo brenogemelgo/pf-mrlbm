@@ -259,10 +259,7 @@ def readPackedField(runDir, metadata, fieldName, stepValue):
         inputFile.seek(fieldIndex * expectedSize * valueBytes)
         rawValues = np.fromfile(inputFile, dtype=np.float32, count=expectedSize)
 
-    values = reshapeZyx(rawValues, metadata)
-    if canonicalName in velocityFields:
-        values = values / getFloat(metadata, "velocityScaleI", 3.0)
-    return values
+    return reshapeZyx(rawValues, metadata)
 
 
 def readScalarField(runDir, metadata, fieldName, selectedStep=None):

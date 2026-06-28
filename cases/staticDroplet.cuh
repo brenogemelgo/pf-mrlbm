@@ -4,12 +4,16 @@ struct StaticDropletCase
 {
     static constexpr const char *NAME = "STATIC_DROPLET";
 
-#ifndef STATIC_DROPLET_RHO_RATIO
-#define STATIC_DROPLET_RHO_RATIO 1.0
+#ifdef CASE_FOUR
+#error "CASE_FOUR was removed; use CASE_THREE"
 #endif
 
-#ifndef STATIC_DROPLET_MU_RATIO
-#define STATIC_DROPLET_MU_RATIO 1.0
+#if !defined(CASE_ONE) && !defined(CASE_TWO) && !defined(CASE_THREE)
+#define CASE_ONE
+#endif
+
+#if (defined(CASE_ONE) ? 1 : 0) + (defined(CASE_TWO) ? 1 : 0) + (defined(CASE_THREE) ? 1 : 0) != 1
+#error "Select exactly one of CASE_ONE, CASE_TWO, or CASE_THREE"
 #endif
 
 #ifndef STATIC_DROPLET_NX
@@ -25,19 +29,43 @@ struct StaticDropletCase
 #endif
 
 #ifndef STATIC_DROPLET_NSTEPS
+#ifdef CASE_TWO
+#define STATIC_DROPLET_NSTEPS 120000
+#elif defined(CASE_THREE)
+#define STATIC_DROPLET_NSTEPS 50000
+#else
 #define STATIC_DROPLET_NSTEPS 100000
+#endif
 #endif
 
 #ifndef STATIC_DROPLET_STAMP
+#ifdef CASE_TWO
+#define STATIC_DROPLET_STAMP 10000
+#elif defined(CASE_THREE)
+#define STATIC_DROPLET_STAMP 10000
+#else
 #define STATIC_DROPLET_STAMP 1000
+#endif
 #endif
 
 #ifndef STATIC_DROPLET_R_INIT
+#ifdef CASE_TWO
 #define STATIC_DROPLET_R_INIT 24.0
+#elif defined(CASE_THREE)
+#define STATIC_DROPLET_R_INIT 32.0
+#else
+#define STATIC_DROPLET_R_INIT 14.0
+#endif
 #endif
 
 #ifndef STATIC_DROPLET_WIDTH
-#define STATIC_DROPLET_WIDTH 5.0
+#ifdef CASE_TWO
+#define STATIC_DROPLET_WIDTH 4.0
+#elif defined(CASE_THREE)
+#define STATIC_DROPLET_WIDTH 6.0
+#else
+#define STATIC_DROPLET_WIDTH 3.0
+#endif
 #endif
 
 #ifndef STATIC_DROPLET_RHO_L
@@ -45,31 +73,35 @@ struct StaticDropletCase
 #endif
 
 #ifndef STATIC_DROPLET_MU_L
+#ifdef CASE_TWO
+#define STATIC_DROPLET_MU_L 1.5e-1
+#elif defined(CASE_THREE)
+#define STATIC_DROPLET_MU_L 5.0e-1
+#else
 #define STATIC_DROPLET_MU_L 5.0e-2
+#endif
 #endif
 
 #ifndef STATIC_DROPLET_SIGMA
-#define STATIC_DROPLET_SIGMA 0.01
+#define STATIC_DROPLET_SIGMA 0.02
 #endif
 
 #ifndef STATIC_DROPLET_TAU_PHI
 #define STATIC_DROPLET_TAU_PHI 1.0
 #endif
 
-#define CASE_ONE
-
 #ifdef CASE_ONE
-    static constexpr real_t RHO_RATIO = static_cast<real_t>(STATIC_DROPLET_RHO_RATIO);
-    static constexpr real_t MU_RATIO = static_cast<real_t>(STATIC_DROPLET_MU_RATIO);
+    static constexpr real_t RHO_RATIO = static_cast<real_t>(1.0);
+    static constexpr real_t MU_RATIO = static_cast<real_t>(1.0);
 #elif defined(CASE_TWO)
-    static constexpr real_t RHO_RATIO = static_cast<real_t>(100.0);
+    static constexpr real_t RHO_RATIO = static_cast<real_t>(1000.0);
     static constexpr real_t MU_RATIO = static_cast<real_t>(100.0);
 #elif defined(CASE_THREE)
-    static constexpr real_t RHO_RATIO = static_cast<real_t>(1000.0);
+    static constexpr real_t RHO_RATIO = static_cast<real_t>(10000.0);
     static constexpr real_t MU_RATIO = static_cast<real_t>(1000.0);
 #else
-    static constexpr real_t RHO_RATIO = static_cast<real_t>(10000.0);
-    static constexpr real_t MU_RATIO = static_cast<real_t>(10000.0);
+    static constexpr real_t RHO_RATIO = static_cast<real_t>(0.0);
+    static constexpr real_t MU_RATIO = static_cast<real_t>(0.0);
 #endif
 
     static constexpr natural_t NX = STATIC_DROPLET_NX;
@@ -91,5 +123,6 @@ struct StaticDropletCase
     static constexpr bool PERIODIC_X = true;
     static constexpr bool PERIODIC_Y = true;
     static constexpr bool PERIODIC_Z = true;
+
     static constexpr bool ENABLE_STATIC_DROPLET_DIAGNOSTICS = true;
 };

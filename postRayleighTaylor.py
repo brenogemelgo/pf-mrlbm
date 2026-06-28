@@ -7,6 +7,7 @@ figureDpi = 600
 lowMixFraction = 0.05
 highMixFraction = 0.95
 
+import argparse
 import csv
 
 import matplotlib
@@ -30,6 +31,37 @@ from postCommon import (
     writeDatFile,
     writeReport,
 )
+
+
+def applyCommandLineArgs():
+    global caseName
+    global runId
+    global selectedStep
+    global outputRoot
+    global showPlots
+    global figureDpi
+    global lowMixFraction
+    global highMixFraction
+
+    parser = argparse.ArgumentParser(description="Post-process a Rayleigh-Taylor run")
+    parser.add_argument("--caseName", default=caseName)
+    parser.add_argument("--runId", default=runId)
+    parser.add_argument("--selectedStep", type=int, default=selectedStep)
+    parser.add_argument("--outputRoot", default=outputRoot)
+    parser.add_argument("--showPlots", action="store_true", default=showPlots)
+    parser.add_argument("--figureDpi", type=int, default=figureDpi)
+    parser.add_argument("--lowMixFraction", type=float, default=lowMixFraction)
+    parser.add_argument("--highMixFraction", type=float, default=highMixFraction)
+    args = parser.parse_args()
+
+    caseName = args.caseName
+    runId = args.runId
+    selectedStep = args.selectedStep
+    outputRoot = args.outputRoot
+    showPlots = args.showPlots
+    figureDpi = args.figureDpi
+    lowMixFraction = args.lowMixFraction
+    highMixFraction = args.highMixFraction
 
 
 def warn(warnings, message):
@@ -398,4 +430,5 @@ def main():
 
 
 if __name__ == "__main__":
+    applyCommandLineArgs()
     main()

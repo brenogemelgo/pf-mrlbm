@@ -38,8 +38,9 @@ __device__ __host__ [[nodiscard]] static __forceinline__ real_t rtiInterfaceZ(
 
     const real_t kx = twoPi * static_cast<real_t>(x) / static_cast<real_t>(NX);
     const real_t ky = twoPi * static_cast<real_t>(y) / static_cast<real_t>(NY);
+    const real_t yMode = RTI_IS_QUASI_2D ? static_cast<real_t>(1) : math::cos(ky);
 
-    return rtiInterfaceCenterZ() + A0 * math::cos(kx) * math::cos(ky);
+    return rtiInterfaceCenterZ() + A0 * math::cos(kx) * yMode;
 }
 
 __device__ __host__ [[nodiscard]] static __forceinline__ real_t rtiInterfacePhi(

@@ -57,29 +57,198 @@ __device__ [[nodiscard]] static __forceinline__ real_t phaseVelocityCu(
     return velocityCu<VelocitySet, Q>(moments, idx);
 }
 
-template <typename Set, natural_t Q>
-__device__ [[nodiscard]] static __forceinline__ real_t normalProjection(
-    const real_t *__restrict__ normx,
-    const real_t *__restrict__ normy,
-    const real_t *__restrict__ normz,
-    const natural_t idx) noexcept
+constexpr natural_t STREAM_PHI_HALO = 2;
+constexpr natural_t STREAM_NORMAL_HALO = 1;
+constexpr natural_t STREAM_PHI_TILE_NX = BLOCK_NX + 2 * STREAM_PHI_HALO;
+constexpr natural_t STREAM_PHI_TILE_NY = BLOCK_NY + 2 * STREAM_PHI_HALO;
+constexpr natural_t STREAM_PHI_TILE_NZ = BLOCK_NZ + 2 * STREAM_PHI_HALO;
+constexpr natural_t STREAM_PHI_TILE_STRIDE = STREAM_PHI_TILE_NX * STREAM_PHI_TILE_NY;
+constexpr natural_t STREAM_PHI_TILE_SIZE = STREAM_PHI_TILE_STRIDE * STREAM_PHI_TILE_NZ;
+constexpr natural_t STREAM_NORMAL_TILE_NX = BLOCK_NX + 2 * STREAM_NORMAL_HALO;
+constexpr natural_t STREAM_NORMAL_TILE_NY = BLOCK_NY + 2 * STREAM_NORMAL_HALO;
+constexpr natural_t STREAM_NORMAL_TILE_NZ = BLOCK_NZ + 2 * STREAM_NORMAL_HALO;
+constexpr natural_t STREAM_NORMAL_TILE_STRIDE = STREAM_NORMAL_TILE_NX * STREAM_NORMAL_TILE_NY;
+constexpr natural_t STREAM_NORMAL_TILE_SIZE = STREAM_NORMAL_TILE_STRIDE * STREAM_NORMAL_TILE_NZ;
+constexpr natural_t STREAM_BLOCK_THREADS = BLOCK_NX * BLOCK_NY * BLOCK_NZ;
+
+__device__ [[nodiscard]] static __forceinline__ natural_t streamSharedPhiIndex(
+    const natural_t x,
+    const natural_t y,
+    const natural_t z) noexcept
 {
-    constexpr int cx = Set::template cx<Q>();
-    constexpr int cy = Set::template cy<Q>();
-    constexpr int cz = Set::template cz<Q>();
+    return x + y * STREAM_PHI_TILE_NX + z * STREAM_PHI_TILE_STRIDE;
+}
+
+__device__ [[nodiscard]] static __forceinline__ natural_t streamSharedNormalIndex(
+    const natural_t x,
+    const natural_t y,
+    const natural_t z) noexcept
+{
+    return x + y * STREAM_NORMAL_TILE_NX + z * STREAM_NORMAL_TILE_STRIDE;
+}
+
+__device__ [[nodiscard]] static __forceinline__ natural_t resolveSharedTileLoadCoordinate(
+    const int value,
+    const int extent,
+    const bool periodic) noexcept
+{
+    if (periodic)
+    {
+        int wrapped = value % extent;
+        if (wrapped < 0)
+        {
+            wrapped += extent;
+        }
+
+        return static_cast<natural_t>(wrapped);
+    }
+
+    if (value < 0)
+    {
+        return static_cast<natural_t>(0);
+    }
+
+    if (value >= extent)
+    {
+        return static_cast<natural_t>(extent - 1);
+    }
+
+    return static_cast<natural_t>(value);
+}
+
+__device__ [[nodiscard]] static __forceinline__ int streamNormalCenterCoordinate(
+    const int value,
+    const int extent,
+    const bool periodic) noexcept
+{
+    if (periodic)
+    {
+        return value;
+    }
+
+    if (value < 0)
+    {
+        return 0;
+    }
+
+    if (value >= extent)
+    {
+        return extent - 1;
+    }
+
+    return value;
+}
+
+template <natural_t Q>
+__device__ static __forceinline__ void accumulateSharedGradientDirection(
+    const real_t *__restrict__ sharedPhi,
+    const int localCenterX,
+    const int localCenterY,
+    const int localCenterZ,
+    real_t &gradx,
+    real_t &grady,
+    real_t &gradz) noexcept
+{
+    constexpr int cx = VelocitySet::cx<Q>();
+    constexpr int cy = VelocitySet::cy<Q>();
+    constexpr int cz = VelocitySet::cz<Q>();
+
+    if constexpr (cx != 0 || cy != 0 || cz != 0)
+    {
+        const natural_t localPhi = streamSharedPhiIndex(
+            static_cast<natural_t>(localCenterX + cx),
+            static_cast<natural_t>(localCenterY + cy),
+            static_cast<natural_t>(localCenterZ + cz));
+        const real_t weightedPhi = VelocitySet::w<Q>() * sharedPhi[localPhi];
+
+        if constexpr (cx != 0)
+        {
+            gradx += static_cast<real_t>(cx) * weightedPhi;
+        }
+        if constexpr (cy != 0)
+        {
+            grady += static_cast<real_t>(cy) * weightedPhi;
+        }
+        if constexpr (cz != 0)
+        {
+            gradz += static_cast<real_t>(cz) * weightedPhi;
+        }
+    }
+}
+
+__device__ static __forceinline__ void computeSharedNormal(
+    const real_t *__restrict__ sharedPhi,
+    const int baseX,
+    const int baseY,
+    const int baseZ,
+    const natural_t localNormalX,
+    const natural_t localNormalY,
+    const natural_t localNormalZ,
+    real_t &normalX,
+    real_t &normalY,
+    real_t &normalZ) noexcept
+{
+    const int rawCenterX = baseX + static_cast<int>(localNormalX) - static_cast<int>(STREAM_NORMAL_HALO);
+    const int rawCenterY = baseY + static_cast<int>(localNormalY) - static_cast<int>(STREAM_NORMAL_HALO);
+    const int rawCenterZ = baseZ + static_cast<int>(localNormalZ) - static_cast<int>(STREAM_NORMAL_HALO);
+
+    const int centerX = streamNormalCenterCoordinate(rawCenterX, static_cast<int>(NX), PERIODIC_X);
+    const int centerY = streamNormalCenterCoordinate(rawCenterY, static_cast<int>(NY), PERIODIC_Y);
+    const int centerZ = streamNormalCenterCoordinate(rawCenterZ, static_cast<int>(NZ), PERIODIC_Z);
+
+    const int localCenterX = centerX - baseX + static_cast<int>(STREAM_PHI_HALO);
+    const int localCenterY = centerY - baseY + static_cast<int>(STREAM_PHI_HALO);
+    const int localCenterZ = centerZ - baseZ + static_cast<int>(STREAM_PHI_HALO);
+
+    real_t gradx = static_cast<real_t>(0);
+    real_t grady = static_cast<real_t>(0);
+    real_t gradz = static_cast<real_t>(0);
+
+    constexpr_for<0, VelocitySet::Q()>(
+        [&](const auto Q) noexcept
+        {
+            accumulateSharedGradientDirection<Q>(
+                sharedPhi, localCenterX, localCenterY, localCenterZ, gradx, grady, gradz);
+        });
+
+    gradx *= VelocitySet::as2();
+    grady *= VelocitySet::as2();
+    gradz *= VelocitySet::as2();
+
+    const real_t gradNorm =
+        math::sqrt(gradx * gradx + grady * grady + gradz * gradz) +
+        static_cast<real_t>(1.0e-9);
+
+    const real_t invGradNorm = static_cast<real_t>(1) / gradNorm;
+
+    normalX = gradx * invGradNorm;
+    normalY = grady * invGradNorm;
+    normalZ = gradz * invGradNorm;
+}
+
+template <natural_t Q>
+__device__ [[nodiscard]] static __forceinline__ real_t sharedNormalProjection(
+    const real_t *__restrict__ sharedNormX,
+    const real_t *__restrict__ sharedNormY,
+    const real_t *__restrict__ sharedNormZ,
+    const natural_t localNormal) noexcept
+{
+    constexpr int cx = VelocitySet::cx<Q>();
+    constexpr int cy = VelocitySet::cy<Q>();
+    constexpr int cz = VelocitySet::cz<Q>();
 
     real_t projection = static_cast<real_t>(0);
     if constexpr (cx != 0)
     {
-        projection += static_cast<real_t>(cx) * __ldg(normx + idx);
+        projection += static_cast<real_t>(cx) * sharedNormX[localNormal];
     }
     if constexpr (cy != 0)
     {
-        projection += static_cast<real_t>(cy) * __ldg(normy + idx);
+        projection += static_cast<real_t>(cy) * sharedNormY[localNormal];
     }
     if constexpr (cz != 0)
     {
-        projection += static_cast<real_t>(cz) * __ldg(normz + idx);
+        projection += static_cast<real_t>(cz) * sharedNormZ[localNormal];
     }
 
     return projection;
@@ -200,11 +369,14 @@ __device__ static __forceinline__ void accumulateHydroStreamDirection(
 }
 
 template <natural_t Q>
-__device__ static __forceinline__ void accumulatePhaseStreamDirection(
+__device__ static __forceinline__ void accumulatePhaseStreamDirectionShared(
     const real_t *__restrict__ moments,
-    const real_t *__restrict__ normx,
-    const real_t *__restrict__ normy,
-    const real_t *__restrict__ normz,
+    const real_t *__restrict__ sharedNormX,
+    const real_t *__restrict__ sharedNormY,
+    const real_t *__restrict__ sharedNormZ,
+    const int baseX,
+    const int baseY,
+    const int baseZ,
     const natural_t x,
     const natural_t y,
     const natural_t z,
@@ -214,13 +386,24 @@ __device__ static __forceinline__ void accumulatePhaseStreamDirection(
     constexpr int cy = VelocitySet::cy<Q>();
     constexpr int cz = VelocitySet::cz<Q>();
 
-    const natural_t src = caseNeighborIndex(static_cast<int>(x) - cx,
-                                            static_cast<int>(y) - cy,
-                                            static_cast<int>(z) - cz);
+    const int srcRawX = static_cast<int>(x) - cx;
+    const int srcRawY = static_cast<int>(y) - cy;
+    const int srcRawZ = static_cast<int>(z) - cz;
+
+    const natural_t src = caseNeighborIndex(srcRawX, srcRawY, srcRawZ);
+
+    const int normalCenterX = streamNormalCenterCoordinate(srcRawX, static_cast<int>(NX), PERIODIC_X);
+    const int normalCenterY = streamNormalCenterCoordinate(srcRawY, static_cast<int>(NY), PERIODIC_Y);
+    const int normalCenterZ = streamNormalCenterCoordinate(srcRawZ, static_cast<int>(NZ), PERIODIC_Z);
+
+    const natural_t localNormal = streamSharedNormalIndex(
+        static_cast<natural_t>(normalCenterX - baseX + static_cast<int>(STREAM_NORMAL_HALO)),
+        static_cast<natural_t>(normalCenterY - baseY + static_cast<int>(STREAM_NORMAL_HALO)),
+        static_cast<natural_t>(normalCenterZ - baseZ + static_cast<int>(STREAM_NORMAL_HALO)));
 
     const real_t phi_src = loadMoment(moments, src, PHI);
     const real_t cu = phaseVelocityCu<Q>(moments, src);
-    const real_t projection = normalProjection<VelocitySet, Q>(normx, normy, normz, src);
+    const real_t projection = sharedNormalProjection<Q>(sharedNormX, sharedNormY, sharedNormZ, localNormal);
 
     const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
                       VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) * projection;
@@ -450,23 +633,15 @@ __device__ static __forceinline__ real_t computePhaseCurvature(
     return VelocitySet::as2() * curvatureAcc;
 }
 
-__global__ void computeNormals(
+__device__ static __forceinline__ void computeMomentNormal(
     const real_t *__restrict__ moments,
-    real_t *__restrict__ normx,
-    real_t *__restrict__ normy,
-    real_t *__restrict__ normz)
+    const natural_t x,
+    const natural_t y,
+    const natural_t z,
+    real_t &normalX,
+    real_t &normalY,
+    real_t &normalZ) noexcept
 {
-    const natural_t x = blockIdx.x * BLOCK_NX + threadIdx.x;
-    const natural_t y = blockIdx.y * BLOCK_NY + threadIdx.y;
-    const natural_t z = blockIdx.z * BLOCK_NZ + threadIdx.z;
-
-    if (x >= NX || y >= NY || z >= NZ)
-    {
-        return;
-    }
-
-    const natural_t idx = global3(x, y, z);
-
     real_t gradx = static_cast<real_t>(0);
     real_t grady = static_cast<real_t>(0);
     real_t gradz = static_cast<real_t>(0);
@@ -487,22 +662,72 @@ __global__ void computeNormals(
 
     const real_t invGradNorm = static_cast<real_t>(1) / gradNorm;
 
-    normx[idx] = gradx * invGradNorm;
-    normy[idx] = grady * invGradNorm;
-    normz[idx] = gradz * invGradNorm;
+    normalX = gradx * invGradNorm;
+    normalY = grady * invGradNorm;
+    normalZ = gradz * invGradNorm;
 }
 
 __global__ void stream(
     const real_t *__restrict__ moments,
-    const real_t *__restrict__ normx,
-    const real_t *__restrict__ normy,
-    const real_t *__restrict__ normz,
     real_t *__restrict__ dbuffer,
     const natural_t step)
 {
+    __shared__ real_t sharedPhi[STREAM_PHI_TILE_SIZE];
+    __shared__ real_t sharedNormX[STREAM_NORMAL_TILE_SIZE];
+    __shared__ real_t sharedNormY[STREAM_NORMAL_TILE_SIZE];
+    __shared__ real_t sharedNormZ[STREAM_NORMAL_TILE_SIZE];
+
+    const int baseX = static_cast<int>(blockIdx.x * BLOCK_NX);
+    const int baseY = static_cast<int>(blockIdx.y * BLOCK_NY);
+    const int baseZ = static_cast<int>(blockIdx.z * BLOCK_NZ);
+
     const natural_t x = blockIdx.x * BLOCK_NX + threadIdx.x;
     const natural_t y = blockIdx.y * BLOCK_NY + threadIdx.y;
     const natural_t z = blockIdx.z * BLOCK_NZ + threadIdx.z;
+
+    const natural_t localThread =
+        threadIdx.x + threadIdx.y * BLOCK_NX + threadIdx.z * BLOCK_NX * BLOCK_NY;
+
+    for (natural_t tileIdx = localThread; tileIdx < STREAM_PHI_TILE_SIZE; tileIdx += STREAM_BLOCK_THREADS)
+    {
+        const natural_t localPhiX = tileIdx % STREAM_PHI_TILE_NX;
+        const natural_t localPhiY = (tileIdx / STREAM_PHI_TILE_NX) % STREAM_PHI_TILE_NY;
+        const natural_t localPhiZ = tileIdx / STREAM_PHI_TILE_STRIDE;
+
+        const int rawX = baseX + static_cast<int>(localPhiX) - static_cast<int>(STREAM_PHI_HALO);
+        const int rawY = baseY + static_cast<int>(localPhiY) - static_cast<int>(STREAM_PHI_HALO);
+        const int rawZ = baseZ + static_cast<int>(localPhiZ) - static_cast<int>(STREAM_PHI_HALO);
+
+        const natural_t src = global3(
+            resolveSharedTileLoadCoordinate(rawX, static_cast<int>(NX), PERIODIC_X),
+            resolveSharedTileLoadCoordinate(rawY, static_cast<int>(NY), PERIODIC_Y),
+            resolveSharedTileLoadCoordinate(rawZ, static_cast<int>(NZ), PERIODIC_Z));
+
+        sharedPhi[tileIdx] = loadMoment(moments, src, PHI);
+    }
+
+    __syncthreads();
+
+    for (natural_t tileIdx = localThread; tileIdx < STREAM_NORMAL_TILE_SIZE; tileIdx += STREAM_BLOCK_THREADS)
+    {
+        const natural_t localNormalX = tileIdx % STREAM_NORMAL_TILE_NX;
+        const natural_t localNormalY = (tileIdx / STREAM_NORMAL_TILE_NX) % STREAM_NORMAL_TILE_NY;
+        const natural_t localNormalZ = tileIdx / STREAM_NORMAL_TILE_STRIDE;
+
+        computeSharedNormal(
+            sharedPhi,
+            baseX,
+            baseY,
+            baseZ,
+            localNormalX,
+            localNormalY,
+            localNormalZ,
+            sharedNormX[tileIdx],
+            sharedNormY[tileIdx],
+            sharedNormZ[tileIdx]);
+    }
+
+    __syncthreads();
 
     if (x >= NX || y >= NY || z >= NZ)
     {
@@ -534,7 +759,18 @@ __global__ void stream(
             [&](const auto Q) noexcept
             {
                 accumulateHydroStreamDirection<Q>(moments, x, y, z, pstar, ux, uy, uz, mxx, myy, mzz, mxy, mxz, myz);
-                accumulatePhaseStreamDirection<Q>(moments, normx, normy, normz, x, y, z, phi);
+                accumulatePhaseStreamDirectionShared<Q>(
+                    moments,
+                    sharedNormX,
+                    sharedNormY,
+                    sharedNormZ,
+                    baseX,
+                    baseY,
+                    baseZ,
+                    x,
+                    y,
+                    z,
+                    phi);
             });
     }
 

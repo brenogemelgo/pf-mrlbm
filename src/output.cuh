@@ -217,10 +217,13 @@ static inline void writeMetadata()
     out << "ATWOOD = " << static_cast<double>(ATWOOD) << '\n';
     out << "A0 = " << static_cast<double>(A0) << '\n';
     out << "L_CHAR = " << static_cast<double>(L_CHAR) << '\n';
+    out << "RTI_QUASI_2D = " << RTI_IS_QUASI_2D << '\n';
     out << "INITIAL_INTERFACE_Z = " << static_cast<double>(0.5) * static_cast<double>(NZ) << '\n';
     out << "INITIAL_PERTURBATION_AMPLITUDE = " << static_cast<double>(A0) << '\n';
     out << "PERTURBATION_WAVELENGTH_X = " << static_cast<double>(NX) << '\n';
-    out << "PERTURBATION_WAVELENGTH_Y = " << static_cast<double>(NY) << '\n';
+    out << "PERTURBATION_WAVELENGTH_Y = " << (RTI_IS_QUASI_2D ? static_cast<double>(0) : static_cast<double>(NY)) << '\n';
+    out << "RTI_Z_WALL_VELOCITY_BC = no_slip" << '\n';
+    out << "RTI_Z_WALL_PHI_BC = neumann_copy" << '\n';
     out << "HEAVY_PHASE_PHI = 1" << '\n';
     out << "LIGHT_PHASE_PHI = 0" << '\n';
 #endif
@@ -230,6 +233,45 @@ static inline void initializeOutputLayout()
 {
     createOutputDirectories();
     writeMetadata();
+}
+
+static inline real_t outputMomentScale(
+    const natural_t field)
+{
+    switch (field)
+    {
+    case UX:
+    case UY:
+    case UZ:
+        return VelocitySet::scaleI();
+    case MXX:
+    case MYY:
+    case MZZ:
+        return VelocitySet::scaleII();
+    case MXY:
+    case MXZ:
+    case MYZ:
+        return VelocitySet::scaleIJ();
+    default:
+        return static_cast<real_t>(1);
+    }
+}
+
+static inline void transformMomentFieldForBinary(
+    std::vector<real_t> &fieldData,
+    const natural_t field,
+    const bool toSolverScale)
+{
+    const real_t scale = outputMomentScale(field);
+    if (scale == static_cast<real_t>(1))
+    {
+        return;
+    }
+
+    for (real_t &value : fieldData)
+    {
+        value = toSolverScale ? value * scale : value / scale;
+    }
 }
 
 static inline void writeBinary(
@@ -250,6 +292,8 @@ static inline void writeBinary(
         outputCheckCuda(
             cudaMemcpy(fieldData.data(), deviceMoments + CELLS * field, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost),
             "cudaMemcpy binary field");
+
+        transformMomentFieldForBinary(fieldData, field, false);
 
         out.write(reinterpret_cast<const char *>(fieldData.data()), static_cast<std::streamsize>(CELLS * sizeof(real_t)));
         if (!out)
@@ -358,6 +402,8 @@ static inline void readBinary(
             std::cerr << "Could not read checkpoint field " << outputMomentName(field) << ": " << path << std::endl;
             std::exit(EXIT_FAILURE);
         }
+
+        transformMomentFieldForBinary(fieldData, field, true);
 
         outputCheckCuda(
             cudaMemcpy(deviceMoments + CELLS * field, fieldData.data(), CELLS * sizeof(real_t), cudaMemcpyHostToDevice),
@@ -808,9 +854,6 @@ __global__ void reducePhiKernel(
 
 __global__ void reduceLocalPhaseDefectKernel(
     const real_t *__restrict__ moments,
-    const real_t *__restrict__ normx,
-    const real_t *__restrict__ normy,
-    const real_t *__restrict__ normz,
     double *__restrict__ partialSum,
     double *__restrict__ partialMax,
     double *__restrict__ partialL1,
@@ -832,6 +875,14 @@ __global__ void reduceLocalPhaseDefectKernel(
     if (idx < CELLS)
     {
         const real_t phi_src = loadMoment(moments, idx, PHI);
+        const natural_t x = idx % NX;
+        const natural_t y = (idx / NX) % NY;
+        const natural_t z = idx / STRIDE;
+
+        real_t normx = static_cast<real_t>(0);
+        real_t normy = static_cast<real_t>(0);
+        real_t normz = static_cast<real_t>(0);
+        computeMomentNormal(moments, x, y, z, normx, normy, normz);
 
         real_t emission = static_cast<real_t>(0);
 
@@ -849,9 +900,9 @@ __global__ void reduceLocalPhaseDefectKernel(
 
                 const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
                                   VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
-                                      (static_cast<real_t>(cx) * normx[idx] +
-                                       static_cast<real_t>(cy) * normy[idx] +
-                                       static_cast<real_t>(cz) * normz[idx]);
+                                      (static_cast<real_t>(cx) * normx +
+                                       static_cast<real_t>(cy) * normy +
+                                       static_cast<real_t>(cz) * normz);
 
                 nonRest += gi;
             });
@@ -870,9 +921,9 @@ __global__ void reduceLocalPhaseDefectKernel(
 
                 const real_t gi = VelocitySet::w<Q>() * phi_src * (static_cast<real_t>(1.0) + cu) +
                                   VelocitySet::w<Q>() * GAMMA * phi_src * (static_cast<real_t>(1.0) - phi_src) *
-                                      (static_cast<real_t>(cx) * normx[idx] +
-                                       static_cast<real_t>(cy) * normy[idx] +
-                                       static_cast<real_t>(cz) * normz[idx]);
+                                      (static_cast<real_t>(cx) * normx +
+                                       static_cast<real_t>(cy) * normy +
+                                       static_cast<real_t>(cz) * normz);
 
                 emission += gi;
             });
@@ -932,16 +983,10 @@ static inline double reducePhiSum(
 
 static inline PhaseDefectStats reduceLocalPhaseDefect(
     const real_t *moments,
-    const real_t *normx,
-    const real_t *normy,
-    const real_t *normz,
     PhaseDiagScratch &scratch)
 {
     reduceLocalPhaseDefectKernel<<<PHASE_DIAG_BLOCKS, PHASE_DIAG_THREADS>>>(
         moments,
-        normx,
-        normy,
-        normz,
         scratch.partialSum,
         scratch.partialMax,
         scratch.partialL1,
@@ -1028,9 +1073,6 @@ static inline void printVelocitySetDiagnostics()
 static inline void runPhaseConservationDiagnostics(
     real_t *moments,
     real_t *dbuffer,
-    real_t *normx,
-    real_t *normy,
-    real_t *normz,
     const dim3 grid,
     const dim3 block,
     const natural_t startStep)
@@ -1074,12 +1116,9 @@ static inline void runPhaseConservationDiagnostics(
     {
         const double a = reducePhiSum(moments, scratch);
 
-        computeNormals<<<grid, block>>>(moments, normx, normy, normz);
-        phaseDiagCheckCuda(cudaGetLastError(), "computeNormals launch");
+        const PhaseDefectStats defect = reduceLocalPhaseDefect(moments, scratch);
 
-        const PhaseDefectStats defect = reduceLocalPhaseDefect(moments, normx, normy, normz, scratch);
-
-        stream<<<grid, block>>>(moments, normx, normy, normz, dbuffer, t);
+        stream<<<grid, block>>>(moments, dbuffer, t);
         phaseDiagCheckCuda(cudaGetLastError(), "stream launch");
 
         const double b = reducePhiSum(dbuffer, scratch);

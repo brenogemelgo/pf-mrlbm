@@ -1,5 +1,5 @@
 caseName = "static_droplet"
-runId = "caseOne"
+runId = "TWO_002_14"
 selectedStep = None
 outputRoot = "output"
 showPlots = False
@@ -130,7 +130,12 @@ def estimatePhiIsoRadius(phi, radius, interfacePhi, targetRadius=np.nan):
     phiMean = np.full(counts.size, np.nan, dtype=np.float64)
     phiMean[valid] = weights[valid] / counts[valid]
     diff = phiMean - interfacePhi
-    crossing = np.flatnonzero(np.isfinite(diff[:-1]) & np.isfinite(diff[1:]) & (diff[:-1] >= 0.0) & (diff[1:] <= 0.0))
+    crossing = np.flatnonzero(
+        np.isfinite(diff[:-1])
+        & np.isfinite(diff[1:])
+        & (diff[:-1] >= 0.0)
+        & (diff[1:] <= 0.0)
+    )
     if crossing.size == 0:
         return np.nan
 
@@ -319,15 +324,15 @@ def boundaryCounts(metadata):
         zBoundary[-1] = True
 
     nonBulk = np.count_nonzero(
-        xBoundary[None, None, :]
-        | yBoundary[None, :, None]
-        | zBoundary[:, None, None]
+        xBoundary[None, None, :] | yBoundary[None, :, None] | zBoundary[:, None, None]
     )
     total = nx * ny * nz
     return total - int(nonBulk), int(nonBulk)
 
 
-def pressureMaskRow(name, insideMask, outsideMask, pstar, pressure, radiusR0, radiusReff):
+def pressureMaskRow(
+    name, insideMask, outsideMask, pstar, pressure, radiusR0, radiusReff
+):
     pstarInside = meanOrNan(pstar, insideMask)
     pstarOutside = meanOrNan(pstar, outsideMask)
     pressureInside = meanOrNan(pressure, insideMask)
@@ -343,9 +348,11 @@ def pressureMaskRow(name, insideMask, outsideMask, pstar, pressure, radiusR0, ra
         "outside_cells": int(np.count_nonzero(outsideMask)),
         "pstar_inside_raw": pstarInside,
         "pstar_outside_raw": pstarOutside,
-        "delta_pstar_raw": pstarInside - pstarOutside
-        if np.isfinite(pstarInside) and np.isfinite(pstarOutside)
-        else np.nan,
+        "delta_pstar_raw": (
+            pstarInside - pstarOutside
+            if np.isfinite(pstarInside) and np.isfinite(pstarOutside)
+            else np.nan
+        ),
         "pressure_inside": pressureInside,
         "pressure_outside": pressureOutside,
         "delta_p": deltaP,
@@ -633,7 +640,9 @@ def main():
     dropletVolumePhysical = dropletVolumeLu * cellVolumePhysical
     radiusEffLu = sphereRadiusFromVolume(dropletVolumeLu)
     radiusEffPhysical = sphereRadiusFromVolume(dropletVolumePhysical)
-    radiusPhi05 = estimatePhiIsoRadius(dropletMeasure, radiusLu, interfacePhi, targetRadius)
+    radiusPhi05 = estimatePhiIsoRadius(
+        dropletMeasure, radiusLu, interfacePhi, targetRadius
+    )
     radiusTargetLu = targetRadius
     radiusTargetPhysical = (
         targetRadius * (cellVolumePhysical ** (1.0 / 3.0))
@@ -741,9 +750,7 @@ def main():
         else np.nan
     )
     kappaChemExpected = (
-        1.5 * sigma * width
-        if np.isfinite(sigma) and np.isfinite(width)
-        else np.nan
+        1.5 * sigma * width if np.isfinite(sigma) and np.isfinite(width) else np.nan
     )
     diffIntExpected = (
         cs2ForChemistry * (tauPhi - 0.5)
@@ -873,7 +880,10 @@ def main():
         metrics[f"{prefix}_sigma_recovered_r0"] = row["sigma_recovered_r0"]
         metrics[f"{prefix}_sigma_recovered_reff"] = row["sigma_recovered_reff"]
 
-    if boundaryNonBulkNodes != 0 and metadataText(metadata, "caseName", "") == "STATIC_DROPLET":
+    if (
+        boundaryNonBulkNodes != 0
+        and metadataText(metadata, "caseName", "") == "STATIC_DROPLET"
+    ):
         warn(
             warnings,
             f"static droplet case has {boundaryNonBulkNodes} non-bulk boundary nodes",
