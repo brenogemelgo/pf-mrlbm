@@ -4,6 +4,10 @@ struct RTICase
 {
     static constexpr const char *NAME = "RTI";
 
+    // RTI presets are launched by the runRayleighTaylor*.sh scripts.
+    // The CUDA case stays generic and is configured through compile-time macros:
+    // A=0.5 spike/bubble trajectory validation and high-contrast presentation sweeps.
+
 #if !defined(CASE_ONE) && !defined(CASE_TWO)
 #define CASE_ONE
 #endif
@@ -25,11 +29,11 @@ struct RTICase
 #endif
 
 #ifndef RTI_NSTEPS
-#define RTI_NSTEPS 200000
+#define RTI_NSTEPS 120000
 #endif
 
 #ifndef RTI_STAMP
-#define RTI_STAMP 10000
+#define RTI_STAMP 5000
 #endif
 
 #ifndef RTI_WIDTH
@@ -37,35 +41,31 @@ struct RTICase
 #endif
 
 #ifndef RTI_RHO_L
-#define RTI_RHO_L 1.0
+#define RTI_RHO_L 3.0
 #endif
 
 #ifndef RTI_RHO_RATIO
-#define RTI_RHO_RATIO 10000.0
+#define RTI_RHO_RATIO 3.0
 #endif
 
 #ifndef RTI_MU_RATIO
-#define RTI_MU_RATIO 1000.0
+#define RTI_MU_RATIO 1.0
 #endif
 
 #ifndef RTI_U_CHAR
-#define RTI_U_CHAR 1.0e-2
+#define RTI_U_CHAR 7.155417527999327e-3
 #endif
 
 #ifndef RTI_REYNOLDS
 #ifdef CASE_ONE
-#define RTI_REYNOLDS 100.0
+#define RTI_REYNOLDS 256.0
 #else
-#define RTI_REYNOLDS 100.0
+#define RTI_REYNOLDS 2048.0
 #endif
 #endif
 
 #ifndef RTI_WEBER
-#ifdef CASE_TWO
-#define RTI_WEBER 500.0
-#else
-#define RTI_WEBER 500.0
-#endif
+#define RTI_WEBER 1.0e9
 #endif
 
 #ifndef RTI_GRAVITY
@@ -82,6 +82,10 @@ struct RTICase
 
 #ifndef RTI_QUASI_2D
 #define RTI_QUASI_2D 1
+#endif
+
+#ifndef RTI_MASS_TOLERANCE
+#define RTI_MASS_TOLERANCE 1.0e-3
 #endif
 
     static constexpr natural_t NX = RTI_NX;
@@ -104,6 +108,7 @@ struct RTICase
 
     static constexpr real_t A0 = static_cast<real_t>(RTI_A0);
     static constexpr real_t TAU_PHI = static_cast<real_t>(RTI_TAU_PHI);
+    static constexpr real_t MASS_TOLERANCE = static_cast<real_t>(RTI_MASS_TOLERANCE);
     static constexpr bool QUASI_2D = RTI_QUASI_2D != 0;
 
     static constexpr bool PERIODIC_X = true;

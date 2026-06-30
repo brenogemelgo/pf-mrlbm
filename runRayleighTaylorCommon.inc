@@ -43,6 +43,13 @@ rti_latest_valid_checkpoint() {
     done < <(find "${binaries_dir}" -maxdepth 1 -type f -name 'step_*.bin' | sort)
 }
 
+rti_sqrt_gl() {
+    local gravity="$1"
+    local length="$2"
+
+    awk -v g="${gravity}" -v l="${length}" 'BEGIN { printf "%.17g\n", sqrt(g * l) }'
+}
+
 rti_compile_case() {
     local case_define="$1"
     local reynolds="$2"
@@ -69,18 +76,36 @@ rti_compile_case() {
         "-DRTI_NSTEPS=${RTI_NSTEPS:-60000}" \
         "-DRTI_STAMP=${RTI_STAMP:-10000}" \
         "-DRTI_WIDTH=${RTI_WIDTH:-6.0}" \
-        "-DRTI_RHO_L=${RTI_RHO_L:-1.0}" \
-        "-DRTI_RHO_RATIO=${RTI_RHO_RATIO:-10000.0}" \
-        "-DRTI_MU_RATIO=${RTI_MU_RATIO:-1000.0}" \
-        "-DRTI_U_CHAR=${RTI_U_CHAR:-1.0e-2}" \
+        "-DRTI_RHO_L=${RTI_RHO_L:-3.0}" \
+        "-DRTI_RHO_RATIO=${RTI_RHO_RATIO:-3.0}" \
+        "-DRTI_MU_RATIO=${RTI_MU_RATIO:-1.0}" \
+        "-DRTI_U_CHAR=${RTI_U_CHAR:-7.155417527999327e-3}" \
         "-DRTI_REYNOLDS=${reynolds}" \
         "-DRTI_WEBER=${weber}" \
         "-DRTI_GRAVITY=${RTI_GRAVITY:-2.0e-7}" \
         "-DRTI_A0=${RTI_A0:-4.0}" \
         "-DRTI_TAU_PHI=${RTI_TAU_PHI:-1.0}" \
         "-DRTI_QUASI_2D=${RTI_QUASI_2D:-1}" \
+        "-DRTI_MASS_TOLERANCE=${RTI_MASS_TOLERANCE:-1.0e-3}" \
         src/main.cu \
         -o "${binary_path}"
+}
+
+rti_post_case() {
+    local run_id="$1"
+    local python_bin="${PYTHON_BIN:-python3}"
+
+    local post_args=(
+        postRayleighTaylor.py
+        --runId "${run_id}"
+        --massTolerance "${RTI_MASS_TOLERANCE:-1.0e-3}"
+    )
+
+    if [[ -n "${RTI_REFERENCE_CSV:-}" ]]; then
+        post_args+=(--referenceCsv "${RTI_REFERENCE_CSV}")
+    fi
+
+    "${python_bin}" "${post_args[@]}"
 }
 
 rti_run_case() {
@@ -94,7 +119,6 @@ rti_run_case() {
     local nz="${RTI_NZ:-512}"
     local nsteps="${RTI_NSTEPS:-60000}"
     local binary_path="${BINARY_PATH:-/tmp/mrlbm_rti_${case_define,,}}"
-    local python_bin="${PYTHON_BIN:-python3}"
     local expected_checkpoint_bytes="${EXPECTED_CHECKPOINT_BYTES:-$(rti_expected_checkpoint_bytes "${nx}" "${ny}" "${nz}")}"
 
     local run_dir="output/rti/${run_id}"
@@ -113,7 +137,7 @@ rti_run_case() {
         fi
 
         echo "final checkpoint exists; post-processing ${run_id}"
-        "${python_bin}" postRayleighTaylor.py --runId "${run_id}"
+        rti_post_case "${run_id}"
         return 0
     fi
 
@@ -131,5 +155,5 @@ rti_run_case() {
         "${binary_path}" --runId "${run_id}"
     fi
 
-    "${python_bin}" postRayleighTaylor.py --runId "${run_id}"
+    rti_post_case "${run_id}"
 }

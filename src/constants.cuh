@@ -87,12 +87,13 @@ constexpr real_t WIDTH = ActiveCase::WIDTH;
 #if defined(CASE_RTI)
 constexpr real_t U_CHAR = ActiveCase::U_CHAR;
 constexpr real_t R_INIT = static_cast<real_t>(0);
-constexpr real_t L_CHAR = static_cast<real_t>(NZ);
+constexpr real_t L_CHAR = static_cast<real_t>(NX);
 constexpr real_t REYNOLDS = ActiveCase::REYNOLDS;
 constexpr real_t WEBER = ActiveCase::WEBER;
 constexpr real_t GRAVITY = ActiveCase::GRAVITY;
 constexpr real_t A0 = ActiveCase::A0;
 constexpr bool RTI_IS_QUASI_2D = ActiveCase::QUASI_2D;
+constexpr real_t RTI_MASS_TOLERANCE_VALUE = ActiveCase::MASS_TOLERANCE;
 constexpr real_t MU_L = static_cast<real_t>((static_cast<double>(RHO_L) * static_cast<double>(U_CHAR) * static_cast<double>(L_CHAR)) / static_cast<double>(REYNOLDS));
 constexpr real_t SIGMA = static_cast<real_t>((static_cast<double>(RHO_L) * static_cast<double>(U_CHAR) * static_cast<double>(U_CHAR) * static_cast<double>(L_CHAR)) / static_cast<double>(WEBER));
 #else
@@ -104,6 +105,7 @@ constexpr real_t WEBER = static_cast<real_t>(0);
 constexpr real_t GRAVITY = static_cast<real_t>(0);
 constexpr real_t A0 = static_cast<real_t>(0);
 constexpr bool RTI_IS_QUASI_2D = false;
+constexpr real_t RTI_MASS_TOLERANCE_VALUE = static_cast<real_t>(0);
 constexpr real_t MU_L = ActiveCase::MU_L;
 constexpr real_t SIGMA = ActiveCase::SIGMA;
 #endif

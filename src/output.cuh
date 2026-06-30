@@ -170,21 +170,40 @@ static inline void writeMetadata()
 
     out << "RHO_L = " << static_cast<double>(RHO_L) << '\n';
     out << "RHO_G = " << static_cast<double>(RHO_G) << '\n';
+    out << "RHO_HEAVY = " << static_cast<double>(RHO_L) << '\n';
+    out << "RHO_LIGHT = " << static_cast<double>(RHO_G) << '\n';
+    out << "RHO_H = " << static_cast<double>(RHO_L) << '\n';
+    out << "rho_h = " << static_cast<double>(RHO_L) << '\n';
+    out << "rho_l = " << static_cast<double>(RHO_G) << '\n';
     out << "MU_L = " << static_cast<double>(MU_L) << '\n';
     out << "MU_G = " << static_cast<double>(MU_G) << '\n';
+    out << "MU_HEAVY = " << static_cast<double>(MU_L) << '\n';
+    out << "MU_LIGHT = " << static_cast<double>(MU_G) << '\n';
+    out << "mu_h = " << static_cast<double>(MU_L) << '\n';
+    out << "mu_l = " << static_cast<double>(MU_G) << '\n';
     out << "NU_L = " << static_cast<double>(NU_L) << '\n';
     out << "NU_G = " << static_cast<double>(NU_G) << '\n';
     out << "RHO_RATIO = " << static_cast<double>(RHO_RATIO) << '\n';
+    out << "R_RHO = " << static_cast<double>(RHO_RATIO) << '\n';
+    out << "rho_ratio = " << static_cast<double>(RHO_RATIO) << '\n';
     out << "MU_RATIO = " << static_cast<double>(MU_RATIO) << '\n';
+    out << "R_MU = " << static_cast<double>(MU_RATIO) << '\n';
+    out << "mu_ratio = " << static_cast<double>(MU_RATIO) << '\n';
     out << "WIDTH = " << static_cast<double>(WIDTH) << '\n';
+    out << "interface_width = " << static_cast<double>(WIDTH) << '\n';
     out << "SIGMA = " << static_cast<double>(SIGMA) << '\n';
+    out << "sigma = " << static_cast<double>(SIGMA) << '\n';
     out << "BETA_CHEM = " << static_cast<double>(BETA_CHEM) << '\n';
     out << "KAPPA_CHEM = " << static_cast<double>(KAPPA_CHEM) << '\n';
     out << "TAU_PHI = " << static_cast<double>(TAU_PHI) << '\n';
     out << "DIFF_INT = " << static_cast<double>(DIFF_INT) << '\n';
     out << "KAPPA_INT = " << static_cast<double>(KAPPA_INT) << '\n';
     out << "GAMMA = " << static_cast<double>(GAMMA) << '\n';
+    out << "mobility = " << static_cast<double>(GAMMA) << '\n';
+    out << "phase_field_mobility = " << static_cast<double>(GAMMA) << '\n';
     out << "U_CHAR = " << static_cast<double>(U_CHAR) << '\n';
+    out << "velocity_scale = " << static_cast<double>(U_CHAR) << '\n';
+    out << "velocity_scale_formula = sqrt(g * L_CHAR)" << '\n';
     out << "R_INIT = " << static_cast<double>(R_INIT) << '\n';
     out << "EXPECTED_DELTA_P = " << static_cast<double>(EXPECTED_DELTA_P) << '\n';
     out << "PHASE_FIELD = phi" << '\n';
@@ -207,25 +226,57 @@ static inline void writeMetadata()
     out << "DROPLET_PHASE_PHI = 1" << '\n';
     out << "AMBIENT_PHASE_PHI = 0" << '\n';
 #elif defined(CASE_RTI)
+    const double domainLengthX = static_cast<double>(NX);
+    const double domainLengthY = static_cast<double>(NY);
+    const double domainLengthZ = static_cast<double>(NZ);
+    const double timeScaleFactor =
+        static_cast<double>(ATWOOD) > static_cast<double>(0.0) &&
+                static_cast<double>(GRAVITY) > static_cast<double>(0.0) &&
+                static_cast<double>(L_CHAR) > static_cast<double>(0.0)
+            ? std::sqrt(static_cast<double>(ATWOOD) * static_cast<double>(GRAVITY) / static_cast<double>(L_CHAR))
+            : std::numeric_limits<double>::quiet_NaN();
+
     out << "verticalDirection = z" << '\n';
     out << "GRAVITY_X = 0" << '\n';
     out << "GRAVITY_Y = 0" << '\n';
     out << "GRAVITY_Z = " << -static_cast<double>(GRAVITY) << '\n';
     out << "GRAVITY = " << static_cast<double>(GRAVITY) << '\n';
+    out << "gravity = " << static_cast<double>(GRAVITY) << '\n';
+    out << "gravity_direction = -z" << '\n';
     out << "REYNOLDS = " << static_cast<double>(REYNOLDS) << '\n';
+    out << "Re = " << static_cast<double>(REYNOLDS) << '\n';
     out << "WEBER = " << static_cast<double>(WEBER) << '\n';
+    out << "We = " << static_cast<double>(WEBER) << '\n';
     out << "ATWOOD = " << static_cast<double>(ATWOOD) << '\n';
+    out << "Atwood = " << static_cast<double>(ATWOOD) << '\n';
     out << "A0 = " << static_cast<double>(A0) << '\n';
+    out << "initial_amplitude = " << static_cast<double>(A0) << '\n';
     out << "L_CHAR = " << static_cast<double>(L_CHAR) << '\n';
+    out << "reference_length = " << static_cast<double>(L_CHAR) << '\n';
+    out << "RE_WE_LENGTH = " << static_cast<double>(L_CHAR) << '\n';
+    out << "DOMAIN_LENGTH_X = " << domainLengthX << '\n';
+    out << "DOMAIN_LENGTH_Y = " << domainLengthY << '\n';
+    out << "DOMAIN_LENGTH_Z = " << domainLengthZ << '\n';
     out << "RTI_QUASI_2D = " << RTI_IS_QUASI_2D << '\n';
     out << "INITIAL_INTERFACE_Z = " << static_cast<double>(0.5) * static_cast<double>(NZ) << '\n';
+    out << "initial_interface = " << static_cast<double>(0.5) * static_cast<double>(NZ) << '\n';
     out << "INITIAL_PERTURBATION_AMPLITUDE = " << static_cast<double>(A0) << '\n';
+    out << "PERTURBATION_MODE_X = 1" << '\n';
+    out << "PERTURBATION_MODE_Y = " << (RTI_IS_QUASI_2D ? 0 : 1) << '\n';
     out << "PERTURBATION_WAVELENGTH_X = " << static_cast<double>(NX) << '\n';
     out << "PERTURBATION_WAVELENGTH_Y = " << (RTI_IS_QUASI_2D ? static_cast<double>(0) : static_cast<double>(NY)) << '\n';
+    out << "wavelength = " << static_cast<double>(NX) << '\n';
+    out << "time_scale_factor = " << timeScaleFactor << '\n';
+    out << "lattice_time_step = 1" << '\n';
+    out << "final_time_dimensionless = " << static_cast<double>(NSTEPS) * timeScaleFactor << '\n';
+    out << "MASS_ERROR_TOLERANCE = " << static_cast<double>(RTI_MASS_TOLERANCE_VALUE) << '\n';
     out << "RTI_Z_WALL_VELOCITY_BC = no_slip" << '\n';
     out << "RTI_Z_WALL_PHI_BC = neumann_copy" << '\n';
     out << "HEAVY_PHASE_PHI = 1" << '\n';
     out << "LIGHT_PHASE_PHI = 0" << '\n';
+    out << "bubble_direction = +z" << '\n';
+    out << "spike_direction = -z" << '\n';
+    out << "spike_depth_definition = initial_interface - spike_position" << '\n';
 #endif
 }
 
@@ -496,12 +547,181 @@ static inline void writeVti(
     vti << "</VTKFile>\n";
 }
 
+static inline bool readRtiInitialPhiMassFromDiagnostics(
+    const std::filesystem::path &diagnosticsPath,
+    double &initialPhiMass)
+{
+    std::ifstream in(diagnosticsPath);
+    if (!in)
+    {
+        return false;
+    }
+
+    std::string header;
+    std::string firstRow;
+    if (!std::getline(in, header) || !std::getline(in, firstRow))
+    {
+        return false;
+    }
+
+    std::vector<std::string> columns;
+    std::stringstream headerStream(header);
+    std::string cell;
+    while (std::getline(headerStream, cell, ','))
+    {
+        columns.push_back(cell);
+    }
+
+    std::vector<std::string> values;
+    std::stringstream rowStream(firstRow);
+    while (std::getline(rowStream, cell, ','))
+    {
+        values.push_back(cell);
+    }
+
+    for (std::size_t i = 0; i < columns.size() && i < values.size(); ++i)
+    {
+        if (columns[i] == "mass_phi")
+        {
+            try
+            {
+                initialPhiMass = std::stod(values[i]);
+                return std::isfinite(initialPhiMass);
+            }
+            catch (const std::exception &)
+            {
+                return false;
+            }
+        }
+    }
+
+    return false;
+}
+
+static inline void writeRtiDiagnostics(
+    const real_t *deviceMoments,
+    const natural_t step,
+    const std::filesystem::path &dir)
+{
+    std::vector<real_t> phi(CELLS);
+    std::vector<real_t> ux(CELLS);
+    std::vector<real_t> uy(CELLS);
+    std::vector<real_t> uz(CELLS);
+
+    outputCheckCuda(cudaMemcpy(phi.data(), deviceMoments + CELLS * PHI, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy RTI diagnostics phi");
+    outputCheckCuda(cudaMemcpy(ux.data(), deviceMoments + CELLS * UX, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy RTI diagnostics ux");
+    outputCheckCuda(cudaMemcpy(uy.data(), deviceMoments + CELLS * UY, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy RTI diagnostics uy");
+    outputCheckCuda(cudaMemcpy(uz.data(), deviceMoments + CELLS * UZ, CELLS * sizeof(real_t), cudaMemcpyDeviceToHost), "cudaMemcpy RTI diagnostics uz");
+
+    double massPhi = 0.0;
+    double maxVelocity = 0.0;
+    real_t minPhi = std::numeric_limits<real_t>::max();
+    real_t maxPhi = std::numeric_limits<real_t>::lowest();
+    real_t minRho = std::numeric_limits<real_t>::max();
+    real_t maxRho = std::numeric_limits<real_t>::lowest();
+
+    for (natural_t idx = 0; idx < CELLS; ++idx)
+    {
+        const real_t phiValue = phi[idx];
+        const real_t rho = RHO_G + (RHO_L - RHO_G) * phiValue;
+
+        const double uxValue = static_cast<double>(ux[idx]);
+        const double uyValue = static_cast<double>(uy[idx]);
+        const double uzValue = static_cast<double>(uz[idx]);
+        const double velocityMagnitude =
+            std::sqrt(uxValue * uxValue + uyValue * uyValue + uzValue * uzValue);
+
+        massPhi += static_cast<double>(phiValue);
+        maxVelocity = std::max(maxVelocity, velocityMagnitude);
+        minPhi = std::min(minPhi, phiValue);
+        maxPhi = std::max(maxPhi, phiValue);
+        minRho = std::min(minRho, rho);
+        maxRho = std::max(maxRho, rho);
+    }
+
+    const std::filesystem::path diagnosticsPath = dir / "diagnostics.csv";
+    const bool writeHeader = !std::filesystem::exists(diagnosticsPath);
+
+    static bool hasInitialPhiMass = false;
+    static double initialPhiMass = std::numeric_limits<double>::quiet_NaN();
+    if (!hasInitialPhiMass)
+    {
+        if (step != 0 && readRtiInitialPhiMassFromDiagnostics(diagnosticsPath, initialPhiMass))
+        {
+            hasInitialPhiMass = true;
+        }
+        else
+        {
+            initialPhiMass = massPhi;
+            hasInitialPhiMass = true;
+        }
+    }
+
+    const double relativeMassError =
+        initialPhiMass != 0.0 && std::isfinite(initialPhiMass)
+            ? std::abs(massPhi - initialPhiMass) / std::abs(initialPhiMass)
+            : std::numeric_limits<double>::quiet_NaN();
+
+    const bool densityNonphysical = minRho <= static_cast<real_t>(0);
+    const bool massErrorLarge =
+        std::isfinite(relativeMassError) &&
+        relativeMassError > static_cast<double>(RTI_MASS_TOLERANCE_VALUE);
+
+    std::ofstream out(diagnosticsPath, std::ios::app);
+    if (!out)
+    {
+        std::cerr << "Could not open RTI diagnostics output: " << diagnosticsPath << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (writeHeader)
+    {
+        out << "step,"
+            << "time_lattice,"
+            << "mass_phi,"
+            << "relative_mass_error_phi,"
+            << "max_velocity,"
+            << "min_rho,"
+            << "max_rho,"
+            << "phi_min,"
+            << "phi_max,"
+            << "density_nonphysical,"
+            << "mass_error_large\n";
+    }
+
+    out << step << ','
+        << std::setprecision(10)
+        << static_cast<double>(step) << ','
+        << massPhi << ','
+        << relativeMassError << ','
+        << maxVelocity << ','
+        << static_cast<double>(minRho) << ','
+        << static_cast<double>(maxRho) << ','
+        << static_cast<double>(minPhi) << ','
+        << static_cast<double>(maxPhi) << ','
+        << densityNonphysical << ','
+        << massErrorLarge << '\n';
+
+    if (densityNonphysical || massErrorLarge)
+    {
+        std::cerr << "RTI health warning at step " << step
+                  << ": relative_mass_error_phi=" << relativeMassError
+                  << ", min_rho=" << static_cast<double>(minRho)
+                  << ", max_rho=" << static_cast<double>(maxRho)
+                  << std::endl;
+    }
+}
+
 static inline void writeCaseDiagnostics(
     const real_t *deviceMoments,
     const natural_t step,
     const std::filesystem::path &dir)
 {
-    if constexpr (!ENABLE_STATIC_DROPLET_DIAGNOSTICS)
+    if constexpr (CASE_IS_RTI)
+    {
+        writeRtiDiagnostics(deviceMoments, step, dir);
+    }
+    else if constexpr (!ENABLE_STATIC_DROPLET_DIAGNOSTICS)
     {
         (void)deviceMoments;
         (void)step;
